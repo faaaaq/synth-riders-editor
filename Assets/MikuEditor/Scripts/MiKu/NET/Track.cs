@@ -437,6 +437,9 @@ namespace MiKu.NET {
 
         [SerializeField]
         private TextMeshProUGUI m_StepMeasureDisplay;
+        
+        [SerializeField]
+        private TextMeshProUGUI m_CycleStepMeasureDisplay;
 
         [SerializeField]
         private TMP_Dropdown m_BookmarkJumpDrop;
@@ -596,6 +599,19 @@ namespace MiKu.NET {
         // BpM use to for the track movement
         private float MBPM = 1f/1f;
         private float MBPMIncreaseFactor = 1f;
+
+        private List<int> foursStepCycle = new List<int>() {1, 4, 8, 16, 32, 64 };
+        private List<int> threesStepCycle = new List<int>() {1, 3, 6, 12, 24, 48};
+        private List<int> allStepCycle = new List<int>() {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64};
+        
+        private enum StepSelectorCycleMode {
+            Fours = 0,
+            Threes = 1,
+            All = 2
+        }
+        //The default snapping type for the snap selector.
+        private StepSelectorCycleMode _stepSelectorCycleMode = StepSelectorCycleMode.Fours;
+
 
         // Current time advance the note selector
         private float _currentTime = 0; 
@@ -1148,6 +1164,13 @@ namespace MiKu.NET {
                         markerWasUpdated = true;
                     }	
                 }			
+            }
+
+            if (Input.GetKeyDown(KeyCode.A) && SelectedCamera == m_FrontViewCamera) {
+                ChangeStepMeasure(false);
+            }
+            else if (Input.GetKeyDown(KeyCode.D) && SelectedCamera == m_FrontViewCamera) {
+                ChangeStepMeasure(true);
             }
 
             // Input.GetKeyDown(KeyCode.Alpha5) || Input.GetKeyDown(KeyCode.Keypad5)
@@ -2077,14 +2100,91 @@ namespace MiKu.NET {
         /// </summary>
         /// <param name="isIncrease">if true increase <see cname="MBPM" /> otherwise decrease it</param>
         public void ChangeStepMeasure(bool isIncrease) {
-            // MBPMIncreaseFactor = (isIncrease) ? MBPMIncreaseFactor * 2 : MBPMIncreaseFactor / 2;
-            MBPMIncreaseFactor = (isIncrease) ? ( (MBPMIncreaseFactor >= 8 ) ? MBPMIncreaseFactor * 2 : MBPMIncreaseFactor + 1 ) : 
-                ( (MBPMIncreaseFactor >= 16 ) ? MBPMIncreaseFactor / 2 : MBPMIncreaseFactor - 1 );
-            MBPMIncreaseFactor = Mathf.Clamp(MBPMIncreaseFactor, 1, 64);
+            // // MBPMIncreaseFactor = (isIncrease) ? MBPMIncreaseFactor * 2 : MBPMIncreaseFactor / 2;
+            
+            //MBPMIncreaseFactor = (isIncrease) ? ( (MBPMIncreaseFactor >= 8 ) ? MBPMIncreaseFactor * 2 : MBPMIncreaseFactor + 1 ) : 
+            //   ( (MBPMIncreaseFactor >= 16 ) ? MBPMIncreaseFactor / 2 : MBPMIncreaseFactor - 1 );
+            //MBPMIncreaseFactor = Mathf.Clamp(MBPMIncreaseFactor, 1, 64);
+            //MBPM = 1/MBPMIncreaseFactor;
+            //m_StepMeasureDisplay.SetText(string.Format("1/{0}", MBPMIncreaseFactor));
+            //DrawTrackXSLines();
+
+            int diff = 0;
+            if (isIncrease) diff = 1;
+            else diff = -1;
+
+            int newIndex = 0;
+
+            switch (_stepSelectorCycleMode) {
+                case StepSelectorCycleMode.Fours:
+                    newIndex = Mathf.Clamp(foursStepCycle.IndexOf((int) MBPMIncreaseFactor) + diff, 0, foursStepCycle.Count - 1);
+                    MBPMIncreaseFactor = foursStepCycle[newIndex];
+                    
+                    break;
+                
+                case StepSelectorCycleMode.Threes:
+                    newIndex = Mathf.Clamp(threesStepCycle.IndexOf((int) MBPMIncreaseFactor) + diff, 0, threesStepCycle.Count - 1);
+                    MBPMIncreaseFactor = threesStepCycle[newIndex];
+                    
+                    break;
+                
+                case StepSelectorCycleMode.All:
+                    newIndex = Mathf.Clamp(allStepCycle.IndexOf((int) MBPMIncreaseFactor) + diff, 0, allStepCycle.Count - 1);
+                    MBPMIncreaseFactor = allStepCycle[newIndex];
+                    
+                    break;
+            }
+            
+            MBPM = 1/MBPMIncreaseFactor;
+            
+            m_StepMeasureDisplay.SetText(string.Format("1/{0}", MBPMIncreaseFactor));
+            
+            DrawTrackXSLines();
+        }
+        
+        /// <summary>
+        /// Cycles the current step measure mode. Evens mode will only snap to evens, any snaps to any, etc.
+        /// </summary>
+        public void CycleStepMeasure() {
+            Debug.Log(MBPMIncreaseFactor);
+
+            switch (_stepSelectorCycleMode) {
+                case StepSelectorCycleMode.Fours:
+                    _stepSelectorCycleMode = StepSelectorCycleMode.Threes;
+                    m_CycleStepMeasureDisplay.SetText("Threes");
+                    
+                    MakeStepMeasureValidForCycle(3);
+                    break;
+                
+                case StepSelectorCycleMode.Threes:
+                    _stepSelectorCycleMode = StepSelectorCycleMode.All;
+                    m_CycleStepMeasureDisplay.SetText("Any");
+                    
+                    MakeStepMeasureValidForCycle(4);
+                    break;
+                
+                case StepSelectorCycleMode.All:
+                    _stepSelectorCycleMode = StepSelectorCycleMode.Fours;
+                    m_CycleStepMeasureDisplay.SetText("Fours");
+                    
+                    MakeStepMeasureValidForCycle(4);
+                    break;
+            }
+
+
+            //void MakeStepMeasureValid(StepSelectorCycleMode mode) {
+                
+            //}
+            
+        }
+
+        private void MakeStepMeasureValidForCycle(int newNum) {
+            MBPMIncreaseFactor = newNum;
             MBPM = 1/MBPMIncreaseFactor;
             m_StepMeasureDisplay.SetText(string.Format("1/{0}", MBPMIncreaseFactor));
             DrawTrackXSLines();
         }
+        
 
         /// <summary>
         /// Change the selected difficulty bein displayed
