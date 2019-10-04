@@ -1272,12 +1272,7 @@ namespace MiKu.NET {
                         MoveCamera(true, GetNextStepPoint());
                         
                         DrawTrackXSLines();
-
-                        currentTimeSecs = (StartOffset > 0) ? Mathf.Max(0, (_currentTime / MS) - (StartOffset / MS) ) : (_currentTime / MS);
-
-                        previewAud.volume = audioSource.volume;
-                        previewAud.time = currentTimeSecs;
-                        previewAud.Play();
+                        PlayStepPreview();
                     } else if(isCTRLDown) {
                         ChangeStepMeasure(true);
                     }
@@ -1307,13 +1302,7 @@ namespace MiKu.NET {
                     if(!isCTRLDown && !isALTDown) {
                         MoveCamera(true, GetPrevStepPoint());
                         DrawTrackXSLines();
-
-                        currentTimeSecs = (StartOffset > 0) ? Mathf.Max(0, (_currentTime / MS) - (StartOffset / MS) ) : (_currentTime / MS);
-
-                        previewAud.volume = audioSource.volume;
-                        previewAud.time = currentTimeSecs;
-                        previewAud.Play();
-
+                        PlayStepPreview();
                     } else if(isCTRLDown){
                         ChangeStepMeasure(false);
                     }
