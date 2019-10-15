@@ -492,6 +492,8 @@ namespace MiKu.NET.Charting {
         public string CustomDifficultyName { get; set; }
 
         public float CustomDifficultySpeed { get; set; }
+        
+        public bool UsingBeatMeasure { get; set;}
 
         public List<string> Tags { get; set; }
     }    

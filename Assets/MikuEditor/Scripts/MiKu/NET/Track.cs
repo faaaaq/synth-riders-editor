@@ -76,6 +76,7 @@ namespace MiKu.NET {
 
     public struct LongNote {
         public float startTime;
+        public float startBeatMeasure;
         public Note note;
         public Note mirroredNote;
         public GameObject gameObject;
@@ -88,20 +89,39 @@ namespace MiKu.NET {
 
     public struct SelectionArea
     {
+        public float startMeasure;
         public float startTime;
         public float endTime;		
     }
 
+    public struct ClipboardNote {        
+        public float[] Position { get; set; }
+        public float[,] Segments  {get; set; }
+        public Note.NoteType Type { get; set; }
+
+        public ClipboardNote(float[] pos, Note.NoteType t, float[,] s) {
+            Type = t;
+            Position = pos;
+            Segments = s;
+        }
+    }
+
     public struct ClipBoardStruct
-    {
+    {   
+        public float BPM;
+        public float startMeasure;
         public float startTime;
         public float lenght;
-        public Dictionary<float, List<Note>> notes;
+        public Dictionary<float, List<ClipboardNote>> notes;
         public List<float> effects;
         public List<float> jumps;
         public List<float> crouchs;
         public List<Slide> slides;	
         public List<float> lights;	
+
+        public string ToJSON() {
+            return JsonConvert.SerializeObject(this, Formatting.None);
+        }
     }
 
     public struct TrackMetronome
@@ -800,6 +820,16 @@ namespace MiKu.NET {
 
         //Represents the current time in seconds (AKA the audioSource.time) that we are into the song. Used when scrolling while paused.
         private float currentTimeSecs = 0f;
+
+        // The current measure in where the edition plane is locate;
+        // because there is triplet it can not be int
+        private float currentSelectedMeasure = 0;
+
+        // the last measure divider use to move the edition plane
+        private int lastMeasureDivider = 1;
+
+        // The max amount of measure an beat can be divide
+        private const int MAX_MEASURE_DIVIDER = 64;
         
 
         // Use this for initialization
@@ -869,7 +899,7 @@ namespace MiKu.NET {
 
         void OnEnable() {	
             try {
-                UpdateDisplayTime(_currentTime);
+                UpdateDisplayTime(CurrentTime);
                 m_MetaNotesColider.SetActive(false);
                 
                 gridWasOn = m_GridGuide.activeSelf;
@@ -885,7 +915,7 @@ namespace MiKu.NET {
                 CurrentSelection = new SelectionArea();
                 //
                 CurrentClipBoard = new ClipBoardStruct();
-                CurrentClipBoard.notes = new Dictionary<float, List<Note>>();
+                CurrentClipBoard.notes = new Dictionary<float, List<ClipboardNote>>();
                 CurrentClipBoard.effects = new List<float>();
                 CurrentClipBoard.jumps = new List<float>();
                 CurrentClipBoard.crouchs = new List<float>();
@@ -1466,33 +1496,6 @@ namespace MiKu.NET {
                 YAxisInverse = !YAxisInverse;
             }
 
-            // #endregionInput.GetKeyDown(KeyCode.PageUp)
-            if( Input.GetButtonDown("Advance UP") && !PromtWindowOpen) {
-                Debug.Log("Scroll up");
-                if(!IsPlaying) {
-                    float ms = MeasureToTime((TimeToMeasure(CurrentTime) + 1));
-                    if(ms <= TrackDuration * MS) {
-                        CurrentTime = GetCloseStepMeasure(ms, false);
-                        MoveCamera(true, MStoUnit(CurrentTime));
-                        DrawTrackXSLines();
-                    }					
-                }
-            }	
-
-            // Input.GetKeyDown(KeyCode.PageDown)
-            if( Input.GetButtonDown("Advance DOWN") && !PromtWindowOpen) {
-                if(!IsPlaying) {
-                    float ms = MeasureToTime((TimeToMeasure(CurrentTime) - 1));
-                    if(ms < 0){
-                        ms = 0;
-                    }
-
-                    CurrentTime = GetCloseStepMeasure(ms, false);
-                    MoveCamera(true, MStoUnit(CurrentTime));
-                    DrawTrackXSLines();					
-                }
-            }	
-
             if( Input.GetButtonDown("TAB")) {
                 ToggleSideBars();
             }
@@ -2066,6 +2069,7 @@ namespace MiKu.NET {
             DrawTrackXSLines(true);
             UpdateNotePositions();
             CurrentTime = 0;
+            CurrentSelectedMeasure = 0;
             MoveCamera(true, CurrentTime);
             InitMetronome();
         }
@@ -2385,7 +2389,7 @@ namespace MiKu.NET {
                     List<Bookmark> bookmarks = CurrentChart.Bookmarks.BookmarksList;
                     if(bookmarks != null){
                         Bookmark book = new Bookmark();
-                        book.time = CurrentTime;
+                        book.time = CurrentSelectedMeasure;
                         book.name = m_BookmarkInput.text;
                         bookmarks.Add(book);	
                         s_instance.AddBookmarkGameObjectToScene(book.time, book.name);
@@ -2520,6 +2524,7 @@ namespace MiKu.NET {
         public void SaveChartAction() {
             CurrentChart.BPM = BPM;
             CurrentChart.Offset = StartOffset;
+            CurrentChart.UsingBeatMeasure = true;
             Serializer.ChartData = CurrentChart;
             Serializer.ChartData.EditorVersion = EditorVersion;
 
@@ -2673,42 +2678,44 @@ namespace MiKu.NET {
 
             List<float> keys_tofilter = workingTrack.Keys.ToList();
             if(CurrentSelection.endTime > CurrentSelection.startTime) {				
-                keys_tofilter = keys_tofilter.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                keys_tofilter = keys_tofilter.Where(time => time >= GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
 
-                CurrentClipBoard.effects = effects.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                CurrentClipBoard.effects = effects.Where(time => time >= GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
 
-                CurrentClipBoard.jumps = jumps.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                CurrentClipBoard.jumps = jumps.Where(time => time >= GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
 
-                CurrentClipBoard.crouchs = crouchs.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                CurrentClipBoard.crouchs = crouchs.Where(time => time >= GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
                 
-                CurrentClipBoard.slides = slides.Where(s => s.time >= CurrentSelection.startTime 
-                    && s.time <= CurrentSelection.endTime).ToList();
+                CurrentClipBoard.slides = slides.Where(s => s.time >= GetBeatMeasureByTime(CurrentSelection.startTime)
+                    && s.time <= GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
 
-                CurrentClipBoard.lights = lights.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                CurrentClipBoard.lights = lights.Where(time => time >= GetBeatMeasureByTime(CurrentSelection.startTime )
+                    && time <= GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
                 
                 CurrentClipBoard.startTime = CurrentSelection.startTime;
+                CurrentClipBoard.startMeasure = CurrentSelection.startMeasure;
                 CurrentClipBoard.lenght = CurrentSelection.endTime - CurrentSelection.startTime;
             } else {
                 RefreshCurrentTime();
 
-                keys_tofilter = keys_tofilter.Where(time => time == CurrentTime).ToList();
+                keys_tofilter = keys_tofilter.Where(time => time == CurrentSelectedMeasure).ToList();
 
-                CurrentClipBoard.effects = effects.Where(time => time == CurrentTime).ToList();
+                CurrentClipBoard.effects = effects.Where(time => time == CurrentSelectedMeasure).ToList();
 
-                CurrentClipBoard.jumps = jumps.Where(time => time == CurrentTime).ToList();
+                CurrentClipBoard.jumps = jumps.Where(time => time == CurrentSelectedMeasure).ToList();
 
-                CurrentClipBoard.crouchs = crouchs.Where(time => time == CurrentTime).ToList();
+                CurrentClipBoard.crouchs = crouchs.Where(time => time == CurrentSelectedMeasure).ToList();
 
-                CurrentClipBoard.slides = slides.Where(s => s.time == CurrentTime).ToList();
+                CurrentClipBoard.slides = slides.Where(s => s.time == CurrentSelectedMeasure).ToList();
 
-                CurrentClipBoard.lights = lights.Where(time => time == CurrentTime).ToList();
+                CurrentClipBoard.lights = lights.Where(time => time == CurrentSelectedMeasure).ToList();
 
                 CurrentClipBoard.startTime = CurrentTime;
+                CurrentClipBoard.startMeasure = CurrentSelectedMeasure;
                 CurrentClipBoard.lenght = 0;
             }
 
@@ -2718,19 +2725,34 @@ namespace MiKu.NET {
                 if(workingTrack.ContainsKey(lookUpTime)) {
                     // If the time key exist, check how many notes are added
                     List<Note> copyNotes = workingTrack[lookUpTime];
-                    List<Note> clipboardNotes = new List<Note>();
+                    List<ClipboardNote> clipboardNotes = new List<ClipboardNote>();
                     int totalNotes = copyNotes.Count;
                     
                     for(int i = 0; i < totalNotes; ++i) {
                         Note toCopy = copyNotes[i];
-                        clipboardNotes.Add(toCopy);						
+                        clipboardNotes.Add(
+                            new ClipboardNote(
+                                toCopy.Position,
+                                toCopy.Type,
+                                toCopy.Segments
+                            )
+                        );						
                     }
 
                     CurrentClipBoard.notes.Add(lookUpTime, clipboardNotes);
                 }				
             }	
 
-            Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, StringVault.Info_NotesCopied);
+            CurrentClipBoard.BPM = BPM;
+
+            try {
+                GUIUtility.systemCopyBuffer = CurrentClipBoard.ToJSON();
+                Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, StringVault.Info_NotesCopied);
+            } catch(Exception e) {
+                Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, "Clipboard Copy error!");
+                Serializer.WriteToLogFile(e.ToString());
+            }
+            
             ClearSelectionMarker();
             isBusy = false;	
         }
@@ -2745,98 +2767,121 @@ namespace MiKu.NET {
 
         public void PasteAction() {
             isBusy = true;
-            float backUpTime = CurrentTime;
+            try {
+                ClipBoardStruct pasteContent = JsonConvert.DeserializeObject<ClipBoardStruct>(GUIUtility.systemCopyBuffer);
+                float backUpTime = CurrentTime;
+                float backUpMeasure = CurrentSelectedMeasure;
 
-            CurrentSelection.startTime = backUpTime;
-            CurrentSelection.endTime = backUpTime + CurrentClipBoard.lenght;
+                /* CurrentSelection.startTime = backUpTime;
+                CurrentSelection.startMeasure = backUpMeasure;
+                CurrentSelection.endTime = backUpTime + pasteContent.lenght; */
 
-            // print(string.Format("Current {0} Lenght {1} Duration {2}", CurrentTime, CurrentClipBoard.lenght, TrackDuration * MS));
-            if((CurrentTime + CurrentClipBoard.lenght) > (TrackDuration * MS) + MS) {
-                // print(string.Format("{0} > {1} - {2}", (CurrentTime + CurrentClipBoard.lenght), TrackDuration * MS, (CurrentTime + CurrentClipBoard.lenght) > (TrackDuration * MS)));
-                Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Alert, StringVault.Info_PasteTooFar);
-                isBusy = false;
-                return;
-            }
+                // print(string.Format("Current {0} Lenght {1} Duration {2}", CurrentTime, CurrentClipBoard.lenght, TrackDuration * MS));
+                /* if((CurrentTime + pasteContent.lenght) > (TrackDuration * MS) + MS) {
+                    // print(string.Format("{0} > {1} - {2}", (CurrentTime + CurrentClipBoard.lenght), TrackDuration * MS, (CurrentTime + CurrentClipBoard.lenght) > (TrackDuration * MS)));
+                    Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Alert, StringVault.Info_PasteTooFar);
+                    isBusy = false;
+                    return;
+                } */
 
-            DeleteNotesAtTheCurrentTime();
+                DeleteNotesAtTheCurrentTime();
 
-            List<float> note_keys = CurrentClipBoard.notes.Keys.ToList();
-            if(note_keys.Count > 0) {
-                Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();
-                List<Note> copyList, currList;
-                
-                for(int i = 0; i < note_keys.Count; ++i) {
-                    currList = CurrentClipBoard.notes[note_keys[i]];
-                    copyList = new List<Note>();
-                    float prevTime = note_keys[i];
-                    float newTime = prevTime + (backUpTime - CurrentClipBoard.startTime);
+                List<float> note_keys = pasteContent.notes.Keys.ToList();
+                if(note_keys.Count > 0) {
+                    Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();
+                    List<Note> copyList;
+                    List<ClipboardNote> currList;
+                    
+                    for(int i = 0; i < note_keys.Count; ++i) {
+                        float prevTime = note_keys[i];
+                        float newTime = prevTime + (backUpMeasure - pasteContent.startMeasure);
 
-                    for(int j = 0; j < currList.Count; ++j) {
-                        Note currNote = currList[j];						
-                        float newPos = MStoUnit(newTime);											
+                        if(GetTimeByMeasure(newTime) > 2000 && GetTimeByMeasure(newTime) < (TrackDuration * MS)) {
+                            currList = pasteContent.notes[note_keys[i]];
+                            copyList = new List<Note>();
+                            
 
-                        Note copyNote = new Note(
-                            new Vector3(currNote.Position[0], currNote.Position[1], newPos),
-                            FormatNoteName(newTime, j, currNote.Type),
-                            currNote.ComboId,
-                            currNote.Type,
-                            currNote.Direction
-                        );
+                            for(int j = 0; j < currList.Count; ++j) {
+                                ClipboardNote currNote = currList[j];						
+                                float newPos = MStoUnit(GetTimeByMeasure(newTime));											
 
-                        if(currNote.Segments != null && currNote.Segments.GetLength(0) > 0) {	
-                            float[,] copySegments = new float[currNote.Segments.GetLength(0), 3];
-                            for(int x = 0; x < currNote.Segments.GetLength(0); ++x) {
-                                Vector3 segmentPos = transform.InverseTransformPoint(
-                                        currNote.Segments[x, 0],
-                                        currNote.Segments[x, 1], 
-                                        currNote.Segments[x, 2]
+                                Note copyNote = new Note(
+                                    new Vector3(currNote.Position[0], currNote.Position[1], newPos),
+                                    FormatNoteName(newTime, j, currNote.Type),
+                                    -1,
+                                    currNote.Type
                                 );
 
-                                float tms = UnitToMS(segmentPos.z);
-                                copySegments[x, 0] = currNote.Segments[x, 0];
-                                copySegments[x, 1] = currNote.Segments[x, 1];
-                                copySegments[x, 2] = MStoUnit(tms + (backUpTime - CurrentClipBoard.startTime));
+                                if(currNote.Segments != null && currNote.Segments.GetLength(0) > 0) {	
+                                    float[,] copySegments = new float[currNote.Segments.GetLength(0), 3];
+                                    for(int x = 0; x < currNote.Segments.GetLength(0); ++x) {
+                                        Vector3 segmentPos = transform.InverseTransformPoint(
+                                                currNote.Segments[x, 0],
+                                                currNote.Segments[x, 1], 
+                                                currNote.Segments[x, 2]
+                                        );
+
+                                        float tms = UnitToMS(segmentPos.z);
+                                        copySegments[x, 0] = currNote.Segments[x, 0];
+                                        copySegments[x, 1] = currNote.Segments[x, 1];
+                                        if(pasteContent.BPM != BPM) {
+                                            // Debug.LogError(j+" - "+tms+" From "+lastBPM+" to "+BPM+" "+sLenght);
+                                            copySegments[x, 2] = MStoUnit(GetTimeByMeasure(GetBeatMeasureByTime(tms, pasteContent.BPM) + (backUpMeasure - pasteContent.startMeasure))); 
+                                        } else {
+                                            copySegments[x, 2] = MStoUnit(GetTimeByMeasure(GetBeatMeasureByTime(tms) + (backUpMeasure - pasteContent.startMeasure))); 
+                                        }
+                                                                        
+                                    }
+                                    copyNote.Segments = copySegments;
+                                }
+
+                                AddNoteGameObjectToScene(copyNote);
+                                copyList.Add(copyNote);
+                                UpdateTotalNotes();
                             }
-                            copyNote.Segments = copySegments;
-                        }
 
-                        AddNoteGameObjectToScene(copyNote);
-                        copyList.Add(copyNote);
-                        UpdateTotalNotes();
+                            workingTrack.Add(newTime, copyList);
+                            AddTimeToSFXList(GetTimeByMeasure(newTime));
+                        }                        
+                    }				
+                }
+
+                for(int i = 0; i < pasteContent.crouchs.Count; ++i) {
+                    if(GetTimeByMeasure(CurrentSelectedMeasure) > 2000 && GetTimeByMeasure(CurrentSelectedMeasure) < (TrackDuration * MS)) {
+                        CurrentSelectedMeasure = pasteContent.crouchs[i] + (backUpMeasure - pasteContent.startMeasure);
+                        ToggleMovementSectionToChart(CROUCH_TAG, true);
                     }
+                }
 
-                    workingTrack.Add(newTime, copyList);
-                    AddTimeToSFXList(newTime);
-                }				
-            }			
+                for(int i = 0; i < pasteContent.slides.Count; ++i) {
+                    if(GetTimeByMeasure(CurrentSelectedMeasure) > 2000 && GetTimeByMeasure(CurrentSelectedMeasure) < (TrackDuration * MS)) {
+                        CurrentSelectedMeasure = pasteContent.slides[i].time + (backUpMeasure - pasteContent.startMeasure);
+                        ToggleMovementSectionToChart(GetSlideTagByType(pasteContent.slides[i].slideType), true);
+                    }
+                }
 
-            for(int i = 0; i < CurrentClipBoard.jumps.Count; ++i) {
-                CurrentTime = CurrentClipBoard.jumps[i] + (backUpTime - CurrentClipBoard.startTime);
-                ToggleMovementSectionToChart(JUMP_TAG, true);
+                for(int i = 0; i < pasteContent.effects.Count; ++i) {
+                    if(GetTimeByMeasure(CurrentSelectedMeasure) > 2000 && GetTimeByMeasure(CurrentSelectedMeasure) < (TrackDuration * MS)) {
+                        CurrentSelectedMeasure = pasteContent.effects[i] + (backUpMeasure - pasteContent.startMeasure);
+                        ToggleEffectToChart(true);
+                    }
+                }
+
+                for(int i = 0; i < pasteContent.lights.Count; ++i) {
+                    if(GetTimeByMeasure(CurrentSelectedMeasure) > 2000 && GetTimeByMeasure(CurrentSelectedMeasure) < (TrackDuration * MS)) {
+                        CurrentSelectedMeasure = pasteContent.lights[i] + (backUpMeasure - pasteContent.startMeasure);
+                        ToggleLightsToChart(true);
+                    }
+                }
+
+                CurrentTime = backUpTime;
+                CurrentSelectedMeasure = backUpMeasure;
+                Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, StringVault.Info_NotePasteSuccess);	
+            } catch(Exception e){
+                Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, "Clipboard Format Error!");
+                Serializer.WriteToLogFile(e.ToString());
             }
-
-            for(int i = 0; i < CurrentClipBoard.crouchs.Count; ++i) {
-                CurrentTime = CurrentClipBoard.crouchs[i] + (backUpTime - CurrentClipBoard.startTime);
-                ToggleMovementSectionToChart(CROUCH_TAG, true);
-            }
-
-            for(int i = 0; i < CurrentClipBoard.slides.Count; ++i) {
-                CurrentTime = CurrentClipBoard.slides[i].time + (backUpTime - CurrentClipBoard.startTime);
-                ToggleMovementSectionToChart(GetSlideTagByType(CurrentClipBoard.slides[i].slideType), true);
-            }
-
-            for(int i = 0; i < CurrentClipBoard.effects.Count; ++i) {
-                CurrentTime = CurrentClipBoard.effects[i] + (backUpTime - CurrentClipBoard.startTime);
-                ToggleEffectToChart(true);
-            }
-
-            for(int i = 0; i < CurrentClipBoard.lights.Count; ++i) {
-                CurrentTime = CurrentClipBoard.lights[i] + (backUpTime - CurrentClipBoard.startTime);
-                ToggleLightsToChart(true);
-            }
-
-            CurrentTime = backUpTime;
-            Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, StringVault.Info_NotePasteSuccess);			
+            		
             isBusy = false;	
         }
         
@@ -3206,7 +3251,7 @@ namespace MiKu.NET {
             } else {
                 if(currentPromt == PromtType.JumpActionTime) {
                     m_JumpWindowAnimator.Play("Panel In");
-                    Miku_JumpToTime.SetPickersValue(_currentTime);
+                    Miku_JumpToTime.SetPickersValue(CurrentTime);
                 } else if(currentPromt == PromtType.AddBookmarkAction) {
                     m_BookmarkWindowAnimator.Play("Panel In");
                     m_BookmarkInput.text = string.Format("Bookmark-{0}", CurrentTime);
@@ -3352,10 +3397,10 @@ namespace MiKu.NET {
                 float newXSSection = 0;
                 float _CK = ( K*MBPM );
                 // double xsKConst = (MS*MINUTE)/(double)BPM;
-                if( (_currentTime%K) > 0 ) {
-                    newXSSection = _currentTime - ( _currentTime%K );
+                if( (CurrentTime%K) > 0 ) {
+                    newXSSection = CurrentTime- ( CurrentTime%K );
                 } else {
-                    newXSSection = _currentTime; //+ ( K - (_currentTime%K ) );			
+                    newXSSection = CurrentTime; //+ ( K - (_currentTime%K ) );			
                 }
 
                 //print(string.Format("{2} : {0} - {1}", currentXSLinesSection, newXSSection, _currentTime));
@@ -3472,6 +3517,27 @@ namespace MiKu.NET {
         float GetLineEndPoint(float _ms, float offset = 0) {
             return MStoUnit((_ms + offset)*DBPM);
         }
+
+        /// <summary>
+        /// Given the Milliseconds return the position of the beat measure
+        /// </summary>
+        /// <param name="_ms">Milliseconds to convert</param>
+        /// <returns>Returns <typeparamref name="float"/></returns>
+        float GetBeatMeasureByTime(float _ms, float _fromBPM = 0) {
+            _fromBPM = _fromBPM == 0 ? BPM : _fromBPM;
+            return (( (_ms/MS) * MAX_MEASURE_DIVIDER) * _fromBPM) / MINUTE;
+        }
+
+        /// <summary>
+        /// Given the beat measure return the time position
+        /// </summary>
+        /// <param name="_ms">Beat measure to convert</param>
+        /// <returns>Returns <typeparamref name="float"/></returns>
+        float GetTimeByMeasure(float _ms, float _fromBPM = 0) {
+            _fromBPM = _fromBPM == 0 ? BPM : _fromBPM;
+            return ( ((_ms * MINUTE) / _fromBPM) / MAX_MEASURE_DIVIDER ) * MS;
+        }
+        
         
         /// <summary>
         /// Return the next point to displace the stage
@@ -3481,32 +3547,22 @@ namespace MiKu.NET {
         /// </remarks>
         /// <returns>Returns <typeparamref name="float"/></returns>
         float GetNextStepPoint() {
-            float _CK = ( K*MBPM );
-
-            //_currentTime+= K*MBPM;
-            //Debug.Log("Current "+_currentTime);
-            if(_currentTime%_CK == 0) { 
-                _currentTime += _CK; 
-            } else { 
-                float nextPoint = _currentTime + ( _CK - (_currentTime%_CK ) );
-                //Debug.Log("Next "+nextPoint);
-                //print(_CK);
-
-                if(nextPoint == _currentTime) {
-                    nextPoint = _currentTime + _CK;
-                }
-
-                if((nextPoint - _currentTime) <= _CK && lastUsedCK == _CK) {
-                    nextPoint = _currentTime + _CK;
-                }
-
-                //nextPoint = _currentTime + _CK;
-                _currentTime = nextPoint; //_currentTime + ( _CK - (_currentTime%_CK ) );
+            if(lastMeasureDivider > MBPMIncreaseFactor) { 
+                CurrentSelectedMeasure = GetBeatMeasureByTime(GetCloseStepMeasure(CurrentTime, true));
+            } else {
+                CurrentSelectedMeasure += (MAX_MEASURE_DIVIDER/MBPMIncreaseFactor);
             }
+            lastMeasureDivider = (int)MBPMIncreaseFactor;
+            
 
-            _currentTime = Mathf.Min(_currentTime, (TM-1)*K);
-            lastUsedCK = _CK;
-            return MStoUnit(_currentTime);
+            CurrentTime = GetTimeByMeasure(CurrentSelectedMeasure);
+            CurrentTime = Mathf.Min(CurrentTime, (TM-1)*K);
+            if(CurrentSelectedMeasure > GetBeatMeasureByTime((TM-1)*K)) {
+                CurrentSelectedMeasure = GetBeatMeasureByTime((TM-1)*K);
+            }
+            /* CurrentSelectedMeasure = Mathf.Ceil(CurrentSelectedMeasure);
+            Debug.LogError("Current measurer divider "+lastMeasureDivider+" target measure "+currentSelectedMeasure+" target time "+CurrentTime); */
+            return MStoUnit(CurrentTime);
         }
 
         /// <summary>
@@ -3517,28 +3573,23 @@ namespace MiKu.NET {
         /// </remarks>
         /// <returns>Returns <typeparamref name="float"/></returns>
         float GetPrevStepPoint() {
-            float _CK = ( K*MBPM );
-            //_currentTime-= K*MBPM;
-            if(_currentTime%_CK == 0) { 
-                _currentTime -= _CK; 
-            } else { 
-                float nextPoint = _currentTime - ( _currentTime%_CK );
-
-                if(nextPoint == _currentTime ) {
-                    nextPoint = _currentTime - _CK;
-                    //print("Now Here");
-                    // || (_currentTime - nextPoint) <= _CK
-                }
-
-                if((_currentTime - nextPoint) <= _CK && lastUsedCK == _CK) {
-                    nextPoint = _currentTime - _CK;
-                }
-
-                _currentTime = nextPoint; //_currentTime - ( _currentTime%_CK ); 
+            if(lastMeasureDivider > MBPMIncreaseFactor) { 
+                CurrentSelectedMeasure = GetBeatMeasureByTime(GetCloseStepMeasure(CurrentTime, false));
+            } else {
+                CurrentSelectedMeasure -= (MAX_MEASURE_DIVIDER/MBPMIncreaseFactor);
             }
-            _currentTime = Mathf.Max(_currentTime, 0);	
-            lastUsedCK = _CK;		
-            return MStoUnit(_currentTime);
+            lastMeasureDivider = (int)MBPMIncreaseFactor;
+            
+
+            CurrentTime = GetTimeByMeasure(CurrentSelectedMeasure);
+            CurrentTime = Mathf.Max(0, CurrentTime);
+
+            if(CurrentSelectedMeasure < 0) {
+                CurrentSelectedMeasure = 0;
+            }
+            /* CurrentSelectedMeasure = Mathf.Round(CurrentSelectedMeasure);
+            Debug.LogError("Current measurer divider "+lastMeasureDivider+" target measure "+currentSelectedMeasure+" target time "+CurrentTime); */
+            return MStoUnit(CurrentTime);
         }
 
         /// <summary>
@@ -3574,13 +3625,13 @@ namespace MiKu.NET {
         /// Play the track from the start or from <see cref="StartOffset"/>
         /// </summary>
         void Play() {
-            float seekTime = (StartOffset > 0) ? Mathf.Max(0, (_currentTime / MS) - (StartOffset / MS) ) : (_currentTime / MS);
+            float seekTime = (StartOffset > 0) ? Mathf.Max(0, (CurrentTime / MS) - (StartOffset / MS) ) : (CurrentTime / MS);
             // if(seekTime >= audioSource.clip.length) { seekTime = audioSource.clip.length; }
             audioSource.time = seekTime;
-            /*float targetSample = (StartOffset > 0) ? Mathf.Max(0, (_currentTime / MS) - (StartOffset / MS) ) : (_currentTime / MS);
-            targetSample = (CurrentChart.AudioFrecuency * CurrentChart.AudioChannels) * (_currentTime + targetSample);
+            /*float targetSample = (StartOffset > 0) ? Mathf.Max(0, (CurrentTime / MS) - (StartOffset / MS) ) : (CurrentTime / MS);
+            targetSample = (CurrentChart.AudioFrecuency * CurrentChart.AudioChannels) * (CurrentTime + targetSample);
             audioSource.timeSamples = (int)targetSample;*/
-            _currentPlayTime = _currentTime;
+            _currentPlayTime = CurrentTime;
             
             m_NotesDropArea.SetActive(false);
             m_MetaNotesColider.SetActive(true);
@@ -3631,7 +3682,7 @@ namespace MiKu.NET {
             if(workingEffects != null && workingEffects.Count > 0) {
                 for(int i = workingEffects.Count - 1; i >= 0; --i) {
                 //for(int i = 0; i < workingEffects.Count; ++i) {
-                    effectsStacks.Push(workingEffects[i]);
+                    effectsStacks.Push(GetTimeByMeasure(workingEffects[i]));
                 }
                 
                 //Track.LogMessage(effectsStacks.Peek().ToString());
@@ -3687,7 +3738,7 @@ namespace MiKu.NET {
         /// Coorutine that start the AudioSource after the <see cref="StartOffset"/> millisecons has passed
         /// </summary>
         IEnumerator StartAudioSourceDelay() {
-            yield return new WaitForSecondsRealtime(Mathf.Max(0, ( (StartOffset / MS)  - (_currentTime / MS)) / PlaySpeed  ));
+            yield return new WaitForSecondsRealtime(Mathf.Max(0, ( (StartOffset / MS)  - (CurrentTime / MS)) / PlaySpeed  ));
 
             if(IsPlaying){ audioSource.Play(); }
         }
@@ -3716,15 +3767,17 @@ namespace MiKu.NET {
             if(!backToPreviousPoint) {
                 float _CK = ( K*MBPM );
                 if( (_currentPlayTime%_CK) / _CK >= 0.5f ) {
-                    _currentTime = GetCloseStepMeasure(_currentPlayTime);
+                    CurrentTime = GetCloseStepMeasure(_currentPlayTime);                    
                 } else {
-                    _currentTime = GetCloseStepMeasure(_currentPlayTime, false);
+                    CurrentTime = GetCloseStepMeasure(_currentPlayTime, false);
                 }
+
+                CurrentSelectedMeasure = GetBeatMeasureByTime(CurrentTime);
             }
 
             _currentPlayTime = 0;
 
-            MoveCamera(true , MStoUnit(_currentTime));
+            MoveCamera(true , MStoUnit(CurrentTime));
 
             m_NotesDropArea.SetActive(true);
             m_MetaNotesColider.SetActive(false);
@@ -3757,7 +3810,7 @@ namespace MiKu.NET {
 
             if(manual) {
                 zDest = moveTo;
-                UpdateDisplayTime(_currentTime);
+                UpdateDisplayTime(CurrentTime);
                 currentHighlightCheck = 0;
             } else {
                 //_currentPlayTime += Time.unscaledDeltaTime * MS;
@@ -3874,18 +3927,24 @@ namespace MiKu.NET {
         /// </summary>
         private void LoadChartNotes() {
             isBusy = true;
+            if(!CurrentChart.UsingBeatMeasure) {
+                UpdateDictionaryKeys();
+            }
+
             UpdateTotalNotes(true);
             Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();
             Dictionary<float, List<Note>>.ValueCollection valueColl = workingTrack.Values;
-
+            
             List<float> keys_sorted = workingTrack.Keys.ToList();
             keys_sorted.Sort();
 
             if(workingTrack != null && workingTrack.Count > 0) {
+                // If the Beatmap is not using beat measure as the dic ID, whe update it                
+                            
                 // Iterate each entry on the Dictionary and get the note to update
                 //foreach( List<Note> _notes in valueColl ) {
                 foreach( float key in keys_sorted ) {
-                    if(key > (TrackDuration * MS) ) {
+                    if(s_instance.GetTimeByMeasure(key) > (TrackDuration * MS) ) {
                         // If the note to add is pass the current song duration, we delete it
                         workingTrack.Remove(key);
                     } else {
@@ -3911,9 +3970,9 @@ namespace MiKu.NET {
                                 if(IsOfSpecialType(n)) {
                                     s_instance.currentSpecialSectionID = n.ComboId;
                                 }
-                            }
-                            
+                            }                            
 
+                            n.Id = FormatNoteName(key, i, n.Type);
                             // And add the note game object to the screen
                             AddNoteGameObjectToScene(n);
                             UpdateTotalNotes();
@@ -3932,7 +3991,7 @@ namespace MiKu.NET {
                             } */
                         }
 
-                        AddTimeToSFXList(key);						
+                        AddTimeToSFXList(s_instance.GetTimeByMeasure(key));						
                     }								
                 }
             }
@@ -3998,16 +4057,165 @@ namespace MiKu.NET {
             }
 
             // If the Chart BPM was Changed we updated
-            if(wasBPMUpdated) {
+            /* if(wasBPMUpdated) {
                 wasBPMUpdated = false;
                 float newBPM = BPM;
                 BPM = CurrentChart.BPM;
                 CurrentChart.BPM = newBPM;
                 ChangeChartBPM(newBPM);
-            }
+            } */
 
             specialSectionStarted = false;
             isBusy = false;
+        }
+
+        /// <summary>
+        /// Update the Dictionary keys from time to meassure
+        /// </summary>
+        private void UpdateDictionaryKeys()
+        {
+            // Bookmarks update
+            if(CurrentChart.Bookmarks.BookmarksList.Count > 0) {
+                for(int i = 0; i < CurrentChart.Bookmarks.BookmarksList.Count; ++i) {
+                    Bookmark bookmark = CurrentChart.Bookmarks.BookmarksList[i];
+                    bookmark.time = GetBeatMeasureByTime(bookmark.time);
+                    CurrentChart.Bookmarks.BookmarksList[i] = bookmark;
+                }
+            }
+
+            // Update not note elements
+            // Lights
+            for(int i = 0; i < CurrentChart.Lights.Easy.Count; ++i) {
+                CurrentChart.Lights.Easy[i] = GetBeatMeasureByTime(CurrentChart.Lights.Easy[i]);
+            }
+            for(int i = 0; i < CurrentChart.Lights.Normal.Count; ++i) {
+                CurrentChart.Lights.Normal[i] = GetBeatMeasureByTime(CurrentChart.Lights.Normal[i]);
+            }
+            for(int i = 0; i < CurrentChart.Lights.Hard.Count; ++i) {
+                CurrentChart.Lights.Hard[i] = GetBeatMeasureByTime(CurrentChart.Lights.Hard[i]);
+            }
+            for(int i = 0; i < CurrentChart.Lights.Expert.Count; ++i) {
+                CurrentChart.Lights.Expert[i] = GetBeatMeasureByTime(CurrentChart.Lights.Expert[i]);
+            }
+            for(int i = 0; i < CurrentChart.Lights.Master.Count; ++i) {
+                CurrentChart.Lights.Master[i] = GetBeatMeasureByTime(CurrentChart.Lights.Master[i]);
+            }
+            for(int i = 0; i < CurrentChart.Lights.Custom.Count; ++i) {
+                CurrentChart.Lights.Custom[i] = GetBeatMeasureByTime(CurrentChart.Lights.Custom[i]);
+            }
+
+            // Effects
+            for(int i = 0; i < CurrentChart.Effects.Easy.Count; ++i) {
+                CurrentChart.Effects.Easy[i] = GetBeatMeasureByTime(CurrentChart.Effects.Easy[i]);
+            }
+            for(int i = 0; i < CurrentChart.Effects.Normal.Count; ++i) {
+                CurrentChart.Effects.Normal[i] = GetBeatMeasureByTime(CurrentChart.Effects.Normal[i]);
+            }
+            for(int i = 0; i < CurrentChart.Effects.Hard.Count; ++i) {
+                CurrentChart.Effects.Hard[i] = GetBeatMeasureByTime(CurrentChart.Effects.Hard[i]);
+            }
+            for(int i = 0; i < CurrentChart.Effects.Expert.Count; ++i) {
+                CurrentChart.Effects.Expert[i] = GetBeatMeasureByTime(CurrentChart.Effects.Expert[i]);
+            }
+            for(int i = 0; i < CurrentChart.Effects.Master.Count; ++i) {
+                CurrentChart.Effects.Master[i] = GetBeatMeasureByTime(CurrentChart.Effects.Master[i]);
+            }
+            for(int i = 0; i < CurrentChart.Effects.Custom.Count; ++i) {
+                CurrentChart.Effects.Custom[i] = GetBeatMeasureByTime(CurrentChart.Effects.Custom[i]);
+            }
+
+            // Crouchs
+            for(int i = 0; i < CurrentChart.Crouchs.Easy.Count; ++i) {
+                CurrentChart.Crouchs.Easy[i] = GetBeatMeasureByTime(CurrentChart.Crouchs.Easy[i]);
+            }
+            for(int i = 0; i < CurrentChart.Crouchs.Normal.Count; ++i) {
+                CurrentChart.Crouchs.Normal[i] = GetBeatMeasureByTime(CurrentChart.Crouchs.Normal[i]);
+            }
+            for(int i = 0; i < CurrentChart.Crouchs.Hard.Count; ++i) {
+                CurrentChart.Crouchs.Hard[i] = GetBeatMeasureByTime(CurrentChart.Crouchs.Hard[i]);
+            }
+            for(int i = 0; i < CurrentChart.Crouchs.Expert.Count; ++i) {
+                CurrentChart.Crouchs.Expert[i] = GetBeatMeasureByTime(CurrentChart.Crouchs.Expert[i]);
+            }
+            for(int i = 0; i < CurrentChart.Crouchs.Master.Count; ++i) {
+                CurrentChart.Crouchs.Master[i] = GetBeatMeasureByTime(CurrentChart.Crouchs.Master[i]);
+            }
+            for(int i = 0; i < CurrentChart.Crouchs.Custom.Count; ++i) {
+                CurrentChart.Crouchs.Custom[i] = GetBeatMeasureByTime(CurrentChart.Crouchs.Custom[i]);
+            }
+
+            // Slides
+            for(int i = 0; i < CurrentChart.Slides.Easy.Count; ++i) {
+                Slide slide = CurrentChart.Slides.Easy[i];
+                slide.time = GetBeatMeasureByTime(slide.time);
+                CurrentChart.Slides.Easy[i] = slide;
+            }
+            for(int i = 0; i < CurrentChart.Slides.Normal.Count; ++i) {
+                Slide slide = CurrentChart.Slides.Normal[i];
+                slide.time = GetBeatMeasureByTime(slide.time);
+                CurrentChart.Slides.Normal[i] = slide;
+            }
+            for(int i = 0; i < CurrentChart.Slides.Hard.Count; ++i) {
+                Slide slide = CurrentChart.Slides.Hard[i];
+                slide.time = GetBeatMeasureByTime(slide.time);
+                CurrentChart.Slides.Hard[i] = slide;
+            }
+            for(int i = 0; i < CurrentChart.Slides.Expert.Count; ++i) {
+                Slide slide = CurrentChart.Slides.Expert[i];
+                slide.time = GetBeatMeasureByTime(slide.time);
+                CurrentChart.Slides.Expert[i] = slide;
+            }
+            for(int i = 0; i < CurrentChart.Slides.Master.Count; ++i) {
+                Slide slide = CurrentChart.Slides.Master[i];
+                slide.time = GetBeatMeasureByTime(slide.time);
+                CurrentChart.Slides.Master[i] = slide;
+            }
+            for(int i = 0; i < CurrentChart.Slides.Custom.Count; ++i) {
+                Slide slide = CurrentChart.Slides.Custom[i];
+                slide.time = GetBeatMeasureByTime(slide.time);
+                CurrentChart.Slides.Custom[i] = slide;
+            }
+
+            // Update note elements
+            UpdateTrackDictonary(CurrentChart.Track.Easy);
+            UpdateTrackDictonary(CurrentChart.Track.Normal);
+            UpdateTrackDictonary(CurrentChart.Track.Hard);
+            UpdateTrackDictonary(CurrentChart.Track.Expert);
+            UpdateTrackDictonary(CurrentChart.Track.Master);
+            UpdateTrackDictonary(CurrentChart.Track.Custom); 
+
+            CurrentChart.UsingBeatMeasure = true;           
+        }
+
+        private void UpdateTrackDictonary(Dictionary<float, List<Note>> dict) {
+            // we need to cache the keys to update since we can't
+            // modify the collection during enumeration
+            var keysToUpdate = new List<float>();
+
+            foreach (var entry in dict)
+            {
+                keysToUpdate.Add(entry.Key);
+            }
+
+            foreach (float keyToUpdate in keysToUpdate)
+            {
+                List<Note> value;
+                if(dict.TryGetValue(keyToUpdate, out value)) {
+                    float newKey = Mathf.Round(GetBeatMeasureByTime(keyToUpdate));
+
+                    // increment the key until arriving at one that doesn't already exist
+                    if (dict.ContainsKey(newKey))
+                    {
+                        continue;
+                    }
+
+                    dict.Remove(keyToUpdate);
+                    dict.Add(newKey, value);
+                } else {
+                    Debug.LogError(keyToUpdate+" not found");
+                }
+                
+            }
         }
 
         /// <summary>
@@ -4061,9 +4269,9 @@ namespace MiKu.NET {
 
             Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, StringVault.Info_NotePasteSuccess);
 
-            if(Miku_Clipboard.ClipboardBPM != BPM) {
+            /* if(Miku_Clipboard.ClipboardBPM != BPM) {
                 UpdateNotePositions(Miku_Clipboard.ClipboardBPM);
-            }
+            } */
             isBusy = false;
         }
 
@@ -4165,7 +4373,7 @@ namespace MiKu.NET {
             effectGO.transform.localPosition = new Vector3(
                                                 0,
                                                 0, 
-                                                s_instance.MStoUnit(ms)
+                                                s_instance.MStoUnit(s_instance.GetTimeByMeasure(ms))
                                             );
             effectGO.transform.rotation =	Quaternion.identity;
             effectGO.transform.parent = s_instance.m_NoNotesElementHolder;
@@ -4184,7 +4392,7 @@ namespace MiKu.NET {
             bookmarkGO.transform.localPosition = new Vector3(
                                                 0,
                                                 0, 
-                                                s_instance.MStoUnit(ms)
+                                                s_instance.MStoUnit(s_instance.GetTimeByMeasure(ms))
                                             );
             bookmarkGO.transform.rotation =	Quaternion.identity;
             bookmarkGO.transform.parent = s_instance.m_NoNotesElementHolder;
@@ -4232,7 +4440,7 @@ namespace MiKu.NET {
             moveSectGO.transform.localPosition = new Vector3(
                                                 0,
                                                 0, 
-                                                s_instance.MStoUnit(ms)
+                                                s_instance.MStoUnit(s_instance.GetTimeByMeasure(ms))
                                             );
             moveSectGO.transform.rotation =	Quaternion.identity;
             moveSectGO.transform.parent = s_instance.m_NoNotesElementHolder;
@@ -4250,7 +4458,7 @@ namespace MiKu.NET {
             lightGO.transform.localPosition = new Vector3(
                                                 0,
                                                 0, 
-                                                s_instance.MStoUnit(ms)
+                                                s_instance.MStoUnit(s_instance.GetTimeByMeasure(ms))
                                             );
             lightGO.transform.rotation =	Quaternion.identity;
             lightGO.transform.parent = s_instance.m_NoNotesElementHolder;
@@ -4308,8 +4516,8 @@ namespace MiKu.NET {
                     // We need to check the track difficulty selected
                     Dictionary<float, List<Note>> workingTrack = s_instance.GetCurrentTrackDifficulty();
                     if(workingTrack != null) {
-                        if(!workingTrack.ContainsKey(CurrentLongNote.startTime)) {
-                            workingTrack.Add(CurrentLongNote.startTime, new List<Note>());
+                        if(!workingTrack.ContainsKey(CurrentLongNote.startBeatMeasure)) {
+                            workingTrack.Add(CurrentLongNote.startBeatMeasure, new List<Note>());
                         } 
 
                         if(CurrentLongNote.note.Segments == null) {
@@ -4334,7 +4542,7 @@ namespace MiKu.NET {
                             }						
                         }
 
-                        workingTrack[CurrentLongNote.startTime].Add(CurrentLongNote.note);
+                        workingTrack[CurrentLongNote.startBeatMeasure].Add(CurrentLongNote.note);
                         abortLongNote = false;
                         Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, StringVault.Info_LongNoteModeFinalized);
                         
@@ -4343,7 +4551,7 @@ namespace MiKu.NET {
                         AddTimeToSFXList(CurrentLongNote.startTime);
 
                         if(CurrentLongNote.mirroredNote != null) {
-                            workingTrack[CurrentLongNote.startTime].Add(CurrentLongNote.mirroredNote);
+                            workingTrack[CurrentLongNote.startBeatMeasure].Add(CurrentLongNote.mirroredNote);
                             UpdateTotalNotes();
                             RenderLine(CurrentLongNote.mirroredObject, CurrentLongNote.mirroredNote.Segments);
                         }
@@ -4363,8 +4571,8 @@ namespace MiKu.NET {
                     }
 
                     /* if(CurrentLongNote.startTime > 0){
-                        _currentTime = CurrentLongNote.startTime;
-                        MoveCamera(true, _currentTime);
+                        CurrentTime = CurrentLongNote.startTime;
+                        MoveCamera(true, CurrentTime);
                     }	*/				
                     
                 } /* else {
@@ -4388,7 +4596,7 @@ namespace MiKu.NET {
         /// </summary>
         void AddLongNoteSegment(GameObject note) {
             // check if the insert time if less that the start time
-            if(_currentTime <= CurrentLongNote.startTime) {
+            if(CurrentTime <= CurrentLongNote.startTime) {
                 Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Alert, StringVault.Alert_LongNoteStartPoint);
                 return;
             }
@@ -4403,7 +4611,7 @@ namespace MiKu.NET {
             // check if there was a previos segment
             if(workingLongNote.lastSegment > 0) {
                 // check if new segment insert larger that the previous segments
-                if(_currentTime <= workingLongNote.lastSegment) {
+                if(CurrentTime <= workingLongNote.lastSegment) {
                     if(!IsOnMirrorMode) {
                         Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Alert, StringVault.Alert_LongNoteStartSegment);
                     }					
@@ -4413,9 +4621,9 @@ namespace MiKu.NET {
 
             // starting insert proccess
             // updating duration
-            workingLongNote.duration = _currentTime - workingLongNote.startTime;
+            workingLongNote.duration = CurrentTime - workingLongNote.startTime;
             // updating the time of the lastSegment
-            workingLongNote.lastSegment = _currentTime;
+            workingLongNote.lastSegment = CurrentTime;
             // add segment object to the scene
             // add the note game object to the screen
             GameObject noteGO = GameObject.Instantiate(GetNoteMarkerByType(workingLongNote.note.Type, true));
@@ -4472,7 +4680,7 @@ namespace MiKu.NET {
                 }
 
                 if((closeMeasure - time) <= _CK) {
-                    closeMeasure = _currentTime + _CK;
+                    closeMeasure = CurrentTime + _CK;
                 } */
                 return closeMeasure;
                 // time + ( _CK - (time%_CK ) );
@@ -4490,18 +4698,12 @@ namespace MiKu.NET {
                 return closeMeasure;
                 //time - ( time%_CK );
             }		
-        }
-
-        float TimeToMeasure(float time) {
-            return ((time*BPM)/(MINUTE*MS)) / 4;
-        }
-
-        float MeasureToTime(float measure){
-            return ((measure*(MINUTE*MS))/BPM) * 4;
-        }
-
+        }      
+        
+        [Obsolete("No in use anymore")]
         void RefreshCurrentTime() {
-            float timeRangeDuplicatesStart = CurrentTime - MIN_TIME_OVERLAY_CHECK;
+            return; 
+            /* float timeRangeDuplicatesStart = CurrentTime - MIN_TIME_OVERLAY_CHECK;
             float timeRangeDuplicatesEnd = CurrentTime + MIN_TIME_OVERLAY_CHECK;
             Dictionary<float, List<Note>> workingTrack = s_instance.GetCurrentTrackDifficulty();
 
@@ -4565,7 +4767,7 @@ namespace MiKu.NET {
                     CurrentTime = slides_tofilter[0].time;
                     return;
                 }
-            }
+            } */
         }
 
         void HighlightNotes() {
@@ -4664,38 +4866,38 @@ namespace MiKu.NET {
 
 
             if(CurrentSelection.endTime > CurrentSelection.startTime) {				
-                keys_tofilter = keys_tofilter.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                keys_tofilter = keys_tofilter.Where(time => time >= s_instance.GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= s_instance.GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
 
-                effects_tofilter = workingEffects.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                effects_tofilter = workingEffects.Where(time => time >= s_instance.GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= s_instance.GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
 
-                jumps_tofilter = jumps.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                jumps_tofilter = jumps.Where(time => time >= s_instance.GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= s_instance.GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
 
-                crouchs_tofilter = crouchs.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                crouchs_tofilter = crouchs.Where(time => time >= s_instance.GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= s_instance.GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
                 
-                slides_tofilter = slides.Where(s => s.time >= CurrentSelection.startTime 
-                    && s.time <= CurrentSelection.endTime).ToList();
+                slides_tofilter = slides.Where(s => s.time >= s_instance.GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && s.time <= s_instance.GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
 
-                lights_tofilter = lights.Where(time => time >= CurrentSelection.startTime 
-                    && time <= CurrentSelection.endTime).ToList();
+                lights_tofilter = lights.Where(time => time >= s_instance.GetBeatMeasureByTime(CurrentSelection.startTime) 
+                    && time <= s_instance.GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
                 
             } else {
                 RefreshCurrentTime();
 
-                keys_tofilter = keys_tofilter.Where(time => time == CurrentTime).ToList();
+                keys_tofilter = keys_tofilter.Where(time => time == CurrentSelectedMeasure).ToList();
 
-                effects_tofilter = workingEffects.Where(time => time == CurrentTime).ToList();
+                effects_tofilter = workingEffects.Where(time => time == CurrentSelectedMeasure).ToList();
 
-                jumps_tofilter = jumps.Where(time => time == CurrentTime).ToList();
+                jumps_tofilter = jumps.Where(time => time == CurrentSelectedMeasure).ToList();
 
-                crouchs_tofilter = crouchs.Where(time => time == CurrentTime).ToList();
+                crouchs_tofilter = crouchs.Where(time => time == CurrentSelectedMeasure).ToList();
 
-                slides_tofilter = slides.Where(s => s.time == CurrentTime).ToList();
+                slides_tofilter = slides.Where(s => s.time == CurrentSelectedMeasure).ToList();
 
-                lights_tofilter = lights.Where(time => time == CurrentTime).ToList();
+                lights_tofilter = lights.Where(time => time == CurrentSelectedMeasure).ToList();
             }
 
             for(int j = 0; j < keys_tofilter.Count; ++j) {
@@ -4720,7 +4922,7 @@ namespace MiKu.NET {
 
                     notes.Clear();
                     workingTrack.Remove(lookUpTime);
-                    hitSFXSource.Remove(lookUpTime);
+                    hitSFXSource.Remove(s_instance.GetTimeByMeasure(lookUpTime));
                 }				
             }	
 
@@ -4977,21 +5179,21 @@ namespace MiKu.NET {
                     }
                 }
 
-                float timeRangeDuplicatesStart = CurrentTime - MIN_TIME_OVERLAY_CHECK;
+                /* float timeRangeDuplicatesStart = CurrentTime - MIN_TIME_OVERLAY_CHECK;
                 float timeRangeDuplicatesEnd = CurrentTime + MIN_TIME_OVERLAY_CHECK;
                 List<float> keys_tofilter = workingTrack.Keys.ToList();
                 keys_tofilter = keys_tofilter.Where(time => time >= timeRangeDuplicatesStart 
-                        && time <= timeRangeDuplicatesEnd).ToList();
+                        && time <= timeRangeDuplicatesEnd).ToList(); */
                 
-                //if(workingTrack.ContainsKey(CurrentTime)) {
-                if(keys_tofilter.Count > 0) {
+                if(workingTrack.ContainsKey(CurrentSelectedMeasure)) {
+                //if(keys_tofilter.Count > 0) {
 
-                    int totalFilteredTime = keys_tofilter.Count;
-                    for(int filterList = 0; filterList < totalFilteredTime; ++filterList) {
+                    /* int totalFilteredTime = keys_tofilter.Count;
+                    for(int filterList = 0; filterList < totalFilteredTime; ++filterList) */ {
                         // If the time key exist, check how many notes are added
-                        float targetTime = keys_tofilter[filterList];
+                        // float targetTime = keys_tofilter[filterList];
                         //print(targetTime+" "+CurrentTime);
-                        List<Note> notes = workingTrack[targetTime];
+                        List<Note> notes = workingTrack[CurrentSelectedMeasure];
                         int totalNotes = notes.Count;
 
                         // Check for overlaping notes and delete if close
@@ -5014,13 +5216,13 @@ namespace MiKu.NET {
                                 s_instance.UpdateTotalNotes(false, true);
 
                                 if(totalNotes <= 0) {
-                                    workingTrack.Remove(targetTime);
-                                    s_instance.hitSFXSource.Remove(targetTime);
+                                    workingTrack.Remove(CurrentSelectedMeasure);
+                                    s_instance.hitSFXSource.Remove(CurrentTime);
                                 } else {
                                     overlap = notes[0];
                                     if(overlap.Type == Note.NoteType.OneHandSpecial) {
                                         nToDelete = GameObject.Find(overlap.Id);
-                                        overlap.Id = FormatNoteName(targetTime, 0, overlap.Type);
+                                        overlap.Id = FormatNoteName(CurrentSelectedMeasure, 0, overlap.Type);
                                         nToDelete.name = overlap.Id;
                                     }								
                                 }
@@ -5028,9 +5230,9 @@ namespace MiKu.NET {
                             }
                         }
 
-                        if(totalNotes > 0) {
+                        /* if(totalNotes > 0) {
                             CurrentTime = targetTime;
-                        }
+                        } */
 
                         // if count is MAX_ALLOWED_NOTES then return because not more notes are allowed
                         if(totalNotes >= MAX_ALLOWED_NOTES) {
@@ -5061,7 +5263,7 @@ namespace MiKu.NET {
                 } else {
                     if(!s_instance.isOnLongNoteMode) {
                         // If the entry time does not exist we just added
-                        workingTrack.Add(CurrentTime, new List<Note>());
+                        workingTrack.Add(CurrentSelectedMeasure, new List<Note>());
 
                         s_instance.AddTimeToSFXList(CurrentTime);
                     }					
@@ -5069,7 +5271,7 @@ namespace MiKu.NET {
 
                 // workingTrack[CurrentTime].Count
 
-                Note n = new Note(note.transform.position, FormatNoteName(CurrentTime, s_instance.TotalNotes + 1, s_instance.selectedNoteType));
+                Note n = new Note(note.transform.position, FormatNoteName(CurrentSelectedMeasure, s_instance.TotalNotes + 1, s_instance.selectedNoteType));
                 n.Type = s_instance.selectedNoteType;
 
                 // If is not on long note mode we add the note as usual
@@ -5093,9 +5295,9 @@ namespace MiKu.NET {
                     
                     // Finally we added the note to the dictonary
                     // ref of the note for easy of access to properties						
-                    if(workingTrack.ContainsKey(CurrentTime)) {
+                    if(workingTrack.ContainsKey(CurrentSelectedMeasure)) {
                         // print("Trying currentTime "+CurrentTime);
-                        workingTrack[CurrentTime].Add(n);
+                        workingTrack[CurrentSelectedMeasure].Add(n);
                         s_instance.AddNoteGameObjectToScene(n);
                         s_instance.UpdateTotalNotes();	
                     } else {
@@ -5103,13 +5305,14 @@ namespace MiKu.NET {
                     }								
                 } else {
                     if(s_instance.CurrentLongNote.note == null) {
-                        // Other wise, init the strut and beign the inserting of the LongNote mode
+                        // Otherwise, init the struct and beign the inserting of the LongNote mode
                         LongNote longNote = s_instance.CurrentLongNote;
                         longNote.startTime = CurrentTime;
+                        longNote.startBeatMeasure = CurrentSelectedMeasure;
                         longNote.note = n;
                         longNote.gameObject = s_instance.AddNoteGameObjectToScene(n);
                         if(IsOnMirrorMode) {
-                            Note mirroredN = new Note(GetMirrorePosition(note.transform.position), FormatNoteName(CurrentTime, s_instance.TotalNotes + 2, GetMirroreNoteMarkerType(n.Type)));
+                            Note mirroredN = new Note(GetMirrorePosition(note.transform.position), FormatNoteName(CurrentSelectedMeasure, s_instance.TotalNotes + 2, GetMirroreNoteMarkerType(n.Type)));
                             mirroredN.Type = GetMirroreNoteMarkerType(n.Type);
                             longNote.mirroredNote = mirroredN;
                             longNote.mirroredObject = s_instance.AddNoteGameObjectToScene(mirroredN);
@@ -5322,9 +5525,11 @@ namespace MiKu.NET {
         /// Move the camera to the closed measure of the passed time value
         /// </summary>
         public static void JumpToTime(float time) {
+            time = s_instance.GetTimeByMeasure(time);
             time = Mathf.Min(time, s_instance.TrackDuration * MS);
-            s_instance._currentTime = s_instance.GetCloseStepMeasure(time, false);
-            s_instance.MoveCamera(true, s_instance.MStoUnit(s_instance._currentTime));
+            CurrentTime = s_instance.GetCloseStepMeasure(time, false);
+            s_instance.MoveCamera(true, s_instance.MStoUnit(CurrentTime));
+            CurrentSelectedMeasure = s_instance.GetBeatMeasureByTime(CurrentTime);
             if(PromtWindowOpen) {
                 s_instance.ClosePromtWindow();
             }			
@@ -5348,9 +5553,9 @@ namespace MiKu.NET {
             // We need to check the effect difficulty selected
             List<float> workingEffects = s_instance.GetCurrentEffectDifficulty();
             if(workingEffects != null) {
-                if(workingEffects.Contains(CurrentTime)) {
-                    workingEffects.Remove(CurrentTime);
-                    GameObject effectGO = GameObject.Find(s_instance.GetEffectIdFormated(CurrentTime));
+                if(workingEffects.Contains(CurrentSelectedMeasure)) {
+                    workingEffects.Remove(CurrentSelectedMeasure);
+                    GameObject effectGO = GameObject.Find(s_instance.GetEffectIdFormated(CurrentSelectedMeasure));
                     if(effectGO != null) {
                         DestroyImmediate(effectGO);
                     }
@@ -5373,8 +5578,8 @@ namespace MiKu.NET {
                             return;
                         }
                     }
-                    workingEffects.Add(CurrentTime);	
-                    s_instance.AddEffectGameObjectToScene(CurrentTime);
+                    workingEffects.Add(CurrentSelectedMeasure);	
+                    s_instance.AddEffectGameObjectToScene(CurrentSelectedMeasure);
 
                     if(!isOverwrite) {
                         Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, StringVault.Info_FlashOn);
@@ -5398,11 +5603,12 @@ namespace MiKu.NET {
             // We need to check the effect difficulty selected
             List<Bookmark> workingBookmarks = CurrentChart.Bookmarks.BookmarksList;
             if(workingBookmarks != null) {
-                Bookmark currentBookmark = workingBookmarks.Find(x => x.time >= CurrentTime - MIN_TIME_OVERLAY_CHECK
-                    && x.time <= CurrentTime + MIN_TIME_OVERLAY_CHECK);
+                /* Bookmark currentBookmark = workingBookmarks.Find(x => x.time >= CurrentTime - MIN_TIME_OVERLAY_CHECK
+                    && x.time <= CurrentTime + MIN_TIME_OVERLAY_CHECK); */
+                Bookmark currentBookmark = workingBookmarks.Find(x => x.time == CurrentSelectedMeasure);
                 if(currentBookmark.time >= 0 && currentBookmark.name != null) {
                     workingBookmarks.Remove(currentBookmark);
-                    GameObject bookmarkGO = GameObject.Find(s_instance.GetBookmarkIdFormated(CurrentTime));
+                    GameObject bookmarkGO = GameObject.Find(s_instance.GetBookmarkIdFormated(CurrentSelectedMeasure));
                     if(bookmarkGO != null) {
                         DestroyImmediate(bookmarkGO);
                     }
@@ -5476,9 +5682,9 @@ namespace MiKu.NET {
             // first we check if theres is any effect in that time period
             // We need to check the effect difficulty selected
             if(workingElementVert != null) {
-                if(workingElementVert.Contains(CurrentTime)) {					
-                    workingElementVert.Remove(CurrentTime);
-                    moveGO = GameObject.Find(s_instance.GetMovementIdFormated(CurrentTime, MoveTAG));
+                if(workingElementVert.Contains(CurrentSelectedMeasure)) {					
+                    workingElementVert.Remove(CurrentSelectedMeasure);
+                    moveGO = GameObject.Find(s_instance.GetMovementIdFormated(CurrentSelectedMeasure, MoveTAG));
                     if(moveGO != null) {
                         DestroyImmediate(moveGO);
                     }
@@ -5488,10 +5694,10 @@ namespace MiKu.NET {
                     }
                 } else {
 
-                    s_instance.RemoveMovementSectionFromChart(MoveTAG, CurrentTime);
+                    s_instance.RemoveMovementSectionFromChart(MoveTAG, CurrentSelectedMeasure);
 
-                    workingElementVert.Add(CurrentTime);	
-                    s_instance.AddMovementGameObjectToScene(CurrentTime, MoveTAG);
+                    workingElementVert.Add(CurrentSelectedMeasure);	
+                    s_instance.AddMovementGameObjectToScene(CurrentSelectedMeasure, MoveTAG);
 
                     if(!isOverwrite) {
                         Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, onText);			
@@ -5500,13 +5706,13 @@ namespace MiKu.NET {
             }
 
             if(workingElementHorz != null) {
-                Slide currentSlide = workingElementHorz.Find(x => x.time == CurrentTime);
+                Slide currentSlide = workingElementHorz.Find(x => x.time == CurrentSelectedMeasure);
                 string CurrentTag = String.Empty;
                 if(currentSlide.initialized) {
                     CurrentTag = s_instance.GetSlideTagByType(currentSlide.slideType);
                     //if(!isOverwrite) {									
                     workingElementHorz.Remove(currentSlide);
-                    moveGO = GameObject.Find(s_instance.GetMovementIdFormated(CurrentTime, CurrentTag));
+                    moveGO = GameObject.Find(s_instance.GetMovementIdFormated(CurrentSelectedMeasure, CurrentTag));
                     if(moveGO != null) {
                         DestroyImmediate(moveGO);
                     }			
@@ -5518,10 +5724,10 @@ namespace MiKu.NET {
                         Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, offText);
                     } 
                 } else {
-                    s_instance.RemoveMovementSectionFromChart(MoveTAG, CurrentTime);
+                    s_instance.RemoveMovementSectionFromChart(MoveTAG, CurrentSelectedMeasure);
 
                     Slide slide = new Slide();
-                    slide.time = CurrentTime;
+                    slide.time = CurrentSelectedMeasure;
                     slide.initialized = true;
 
                     switch(MoveTAG) {
@@ -5543,7 +5749,7 @@ namespace MiKu.NET {
                     }
 
                     workingElementHorz.Add(slide);	
-                    s_instance.AddMovementGameObjectToScene(CurrentTime, MoveTAG);
+                    s_instance.AddMovementGameObjectToScene(CurrentSelectedMeasure, MoveTAG);
                     if(!isOverwrite) {
                         Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, onText);	
                     }
@@ -5566,9 +5772,9 @@ namespace MiKu.NET {
             // We need to check the effect difficulty selected
             List<float> lights = s_instance.GetCurrentLightsByDifficulty();
             if(lights != null) {
-                if(lights.Contains(CurrentTime)) {
-                    lights.Remove(CurrentTime);
-                    GameObject lightGO = GameObject.Find(s_instance.GetLightIdFormated(CurrentTime));
+                if(lights.Contains(CurrentSelectedMeasure)) {
+                    lights.Remove(CurrentSelectedMeasure);
+                    GameObject lightGO = GameObject.Find(s_instance.GetLightIdFormated(CurrentSelectedMeasure));
                     if(lightGO != null) {
                         DestroyImmediate(lightGO);
                     }
@@ -5588,8 +5794,8 @@ namespace MiKu.NET {
                             return;
                         }
                     }
-                    lights.Add(CurrentTime);	
-                    s_instance.AddLightGameObjectToScene(CurrentTime);
+                    lights.Add(CurrentSelectedMeasure);	
+                    s_instance.AddLightGameObjectToScene(CurrentSelectedMeasure);
 
                     if(!isOverwrite) {
                         Miku_DialogManager.ShowDialog(
@@ -5693,233 +5899,16 @@ namespace MiKu.NET {
         void UpdateNotePositions(float fromBPM = 0, bool kWasChange = false) {
             isBusy = true;
 
+            DeleteNotesGameObjects();
+
             try {
-                // Get the current working track
-                Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();	
-                float newTime, newPos;		
-
-                if(workingTrack != null && workingTrack.Count > 0) {
-                    // New Dictionary on where the new data will be update
-                    Dictionary<float, List<Note>> updateData = new Dictionary<float, List<Note>>();
-
-                    // Iterate each entry on the Dictionary and get the note to update
-                    foreach( KeyValuePair<float, List<Note>> kvp in workingTrack )
-                    {
-                        List<Note> _notes = kvp.Value;
-                        List<Note> updateList = new List<Note>();
-
-                        // The new update time
-                        newTime = UpdateTimeToBPM(kvp.Key, fromBPM);		
-
-                        // Iterate each note and update its info
-                        for(int i = 0; i < _notes.Count; i++) {
-                            Note n = _notes[i];
-
-                            // Get the new position using the new constants
-                            newPos = MStoUnit(newTime);
-                            // And update the value on the Dictionary
-                            n.Position = new float[3] { n.Position[0], n.Position[1], newPos };
-                            // And update the position of the GameObject
-                            GameObject noteGO = GameObject.Find(n.Id);
-                            noteGO.transform.position = new Vector3(
-                                noteGO.transform.position.x,
-                                noteGO.transform.position.y,
-                                newPos );							
-
-                            // Update data
-                            n.Id = FormatNoteName(newTime, i, n.Type);
-                            updateList.Add(n);
-                            noteGO.name = n.Id;		
-
-                            if(n.Segments != null && n.Segments.GetLength(0) > 0) {		
-                                for(int j = 0; j < n.Segments.GetLength(0); ++j) {
-                                    Vector3 segmentPos = transform.InverseTransformPoint(
-                                            n.Segments[j, 0],
-                                            n.Segments[j, 1], 
-                                            n.Segments[j, 2]
-                                    );
-
-                                    float tms = UnitToMS(segmentPos.z);
-                                    n.Segments[j, 2] = MStoUnit(UpdateTimeToBPM(tms, fromBPM));
-                                }
-
-                                AddNoteSegmentsObject(n, noteGO.transform.Find("LineArea"), true);
-                            }
-
-                            /* if(n.Segments != null && n.Segments.GetLength(0) > 0) {
-                                for(int j = 0; j < n.Segments.GetLength(0); ++j) {
-                                    Vector3 segmentPos = transform.InverseTransformPoint(
-                                            n.Segments[j, 0],
-                                            n.Segments[j, 1], 
-                                            n.Segments[j, 2]
-                                    );
-
-                                    float tms = UnitToMS(segmentPos.z);
-                                    n.Segments[j, 2] = MStoUnit(UpdateTimeToBPM(tms, fromBPM));
-                                }
-                                
-                                RenderLine(noteGO, n.Segments, true);
-                            } */
-                        }
-                        
-                        // Add update note to new list
-                        updateData.Add(newTime, updateList);
-                    }
-
-                    // Finally Update the note data
-                    workingTrack.Clear();
-                    UpdateCurrentTrackDifficulty(updateData);
-                }
-
-                List<float> workingEffects = GetCurrentEffectDifficulty();
-                if(workingEffects != null && workingEffects.Count > 0) {
-                    List<float> updatedEffects = new List<float>();
-                    for(int i = 0; i < workingEffects.Count; ++i) {
-                        // The new update time
-                        newTime = UpdateTimeToBPM(workingEffects[i], fromBPM);
-                        newPos = MStoUnit(newTime);
-
-                        GameObject effectGO = GameObject.Find(GetEffectIdFormated(workingEffects[i]));
-                        if(effectGO != null) {
-                            effectGO.transform.position = new Vector3(
-                                effectGO.transform.position.x,
-                                effectGO.transform.position.y,
-                                newPos );
-                            effectGO.name = GetEffectIdFormated(newTime);
-                            
-                            updatedEffects.Add(newTime);
-                        } 
-                        
-                    }
-
-                    workingEffects.Clear();
-                    UpdateCurrentEffectDifficulty(updatedEffects);
-                }
-
-                List<Bookmark> bookmarks = CurrentChart.Bookmarks.BookmarksList;
-                if(bookmarks != null && bookmarks.Count > 0) {
-                    List<Bookmark> updateBookmarks = new List<Bookmark>();
-                    Bookmark currBookmark;
-                    for(int i = 0; i < bookmarks.Count; ++i) {
-                        currBookmark = bookmarks[i];
-                        newTime = UpdateTimeToBPM(currBookmark.time, fromBPM);
-                        newPos = MStoUnit(newTime);						
-
-                        GameObject bookmarkGO = GameObject.Find(GetBookmarkIdFormated(currBookmark.time));
-                        if(bookmarkGO != null) {
-                            bookmarkGO.transform.position = new Vector3(
-                                bookmarkGO.transform.position.x,
-                                bookmarkGO.transform.position.y,
-                                newPos );
-                            bookmarkGO.name = GetBookmarkIdFormated(newTime);
-                            //currBookmark.time = newTime;
-                            Bookmark copyBookmark = new Bookmark();
-                            copyBookmark.name = currBookmark.name;
-                            copyBookmark.time = newTime;
-                            updateBookmarks.Add(copyBookmark);
-                        } 					
-                    }
-
-                    bookmarks.Clear();
-                    UpdateCurrentEffectDifficulty(updateBookmarks, true);
-                }
-
-                List<float> jumps = GetCurrentMovementListByDifficulty(true);
-                if(jumps != null && jumps.Count > 0) {
-                    List<float> updatedJumps = new List<float>();
-                    for(int i = 0; i < jumps.Count; ++i) {
-                        newTime = UpdateTimeToBPM(jumps[i], fromBPM);
-                        newPos = MStoUnit(newTime);
-
-                        GameObject moveSectGO = GameObject.Find(GetMovementIdFormated(jumps[i], JUMP_TAG));
-                        if(moveSectGO != null) {
-                            moveSectGO.transform.position = new Vector3(
-                                moveSectGO.transform.position.x,
-                                moveSectGO.transform.position.y,
-                                newPos );
-                            moveSectGO.name = GetMovementIdFormated(newTime, JUMP_TAG);
-
-                            updatedJumps.Add(newTime);
-                        }
-                    }
-
-                    jumps.Clear();
-                    UpdateCurrentMovementDifficulty(updatedJumps, JUMP_TAG);
-                }
-
-                List<float> crouchs = GetCurrentMovementListByDifficulty(false);
-                if(crouchs != null && crouchs.Count > 0) {
-                    List<float> updatedCrouchs = new List<float>();
-                    for(int i = 0; i < crouchs.Count; ++i) {
-                        newTime = UpdateTimeToBPM(crouchs[i], fromBPM);
-                        newPos = MStoUnit(newTime);
-
-                        GameObject moveSectGO = GameObject.Find(GetMovementIdFormated(crouchs[i], CROUCH_TAG));
-                        if(moveSectGO != null) {
-                            moveSectGO.transform.position = new Vector3(
-                                moveSectGO.transform.position.x,
-                                moveSectGO.transform.position.y,
-                                newPos );
-                            moveSectGO.name = GetMovementIdFormated(newTime, CROUCH_TAG);
-
-                            updatedCrouchs.Add(newTime);
-                        }
-                    }
-
-                    crouchs.Clear();
-                    UpdateCurrentMovementDifficulty(updatedCrouchs, CROUCH_TAG);
-                }
-
-                List<Slide> slides = GetCurrentMovementListByDifficulty();
-                if(slides != null && slides.Count > 0) {
-                    List<Slide> updateSlides = new List<Slide>();
-                    for(int i = 0; i < slides.Count; ++i) {
-                        Slide currSlide = slides[i];
-                        newTime = UpdateTimeToBPM(slides[i].time, fromBPM);
-                        newPos = MStoUnit(newTime);
-                        
-                        GameObject moveSectGO = GameObject.Find(GetMovementIdFormated(currSlide.time, GetSlideTagByType(currSlide.slideType)));
-                        if(moveSectGO != null) {
-                            moveSectGO.transform.position = new Vector3(
-                                moveSectGO.transform.position.x,
-                                moveSectGO.transform.position.y,
-                                newPos );
-                            moveSectGO.name = GetMovementIdFormated(newTime, GetSlideTagByType(currSlide.slideType));
-
-                            currSlide.time = newTime;
-                            updateSlides.Add(currSlide);
-                        } 
-                    }
-
-                    slides.Clear();
-                    UpdateCurrentMovementDifficulty(updateSlides, SLIDE_CENTER_TAG);
-                }
-
-                List<float> lights = GetCurrentLightsByDifficulty();
-                if(lights != null && lights.Count > 0) {
-                    List<float> updatedLights = new List<float>();
-                    for(int i = 0; i < lights.Count; ++i) {
-                        // The new update time
-                        newTime = UpdateTimeToBPM(lights[i], fromBPM);
-                        newPos = MStoUnit(newTime);
-
-                        GameObject effectGO = GameObject.Find(GetLightIdFormated(lights[i]));
-                        if(effectGO != null) {
-                            effectGO.transform.position = new Vector3(
-                                effectGO.transform.position.x,
-                                effectGO.transform.position.y,
-                                newPos );
-                            effectGO.name = GetLightIdFormated(newTime);
-                            
-                            updatedLights.Add(newTime);
-                        } 
-                        
-                    }
-
-                    lights.Clear();
-                    UpdateCurrentLightsDifficulty(updatedLights);
-                }
-
+                UpdateCurrentNotesPosition(CurrentChart.Track.Easy);
+                UpdateCurrentNotesPosition(CurrentChart.Track.Normal);
+                UpdateCurrentNotesPosition(CurrentChart.Track.Hard);
+                UpdateCurrentNotesPosition(CurrentChart.Track.Expert);
+                UpdateCurrentNotesPosition(CurrentChart.Track.Master);
+                UpdateCurrentNotesPosition(CurrentChart.Track.Custom);
+                LoadChartNotes();
             } catch(Exception ex) {
                 LogMessage("BPM update error");
                 LogMessage(ex.ToString());
@@ -5928,12 +5917,48 @@ namespace MiKu.NET {
             }
             
 
-            ///_currentTime = UpdateTimeToBPM(_currentTime);
-            /*_currentTime = _currentTime - (K);
-            MoveCamera(true , MStoUnit(_currentTime));*/
+            ///CurrentTime = UpdateTimeToBPM(CurrentTime);
+            /*CurrentTime = CurrentTime - (K);
+            MoveCamera(true , MStoUnit(CurrentTime));*/
 
             //CurrentChart.BPM = BPM;
             isBusy = false;
+        }
+
+        void UpdateCurrentNotesPosition(Dictionary<float, List<Note>> workingTrack) {
+            // Debug.LogError("UpdateCurrentNotesPosition");
+            if(workingTrack != null && workingTrack.Count > 0) {
+                // Iterate each entry on the Dictionary and get the note to update
+                foreach( KeyValuePair<float, List<Note>> kvp in workingTrack )
+                {
+                    List<Note> _notes = kvp.Value;		
+
+                    // Iterate each note and update its info
+                    for(int i = 0; i < _notes.Count; i++) {
+                        Note n = _notes[i];
+
+                        // Debug.LogError(i +" - "+_notes.Count);
+                        // Get the new position using the new constants
+                        float newPos = MStoUnit(GetTimeByMeasure(kvp.Key));
+                        // And update the value on the Dictionary
+                        n.Position = new float[3] { n.Position[0], n.Position[1], newPos };		
+                        float sLenght = n.Segments.GetLength(0);
+                        if(n.Segments != null && sLenght > 0) {		
+                            for(int j = 0; j < sLenght; ++j) {
+                                Vector3 segmentPos = transform.InverseTransformPoint(
+                                        n.Segments[j, 0],
+                                        n.Segments[j, 1], 
+                                        n.Segments[j, 2]
+                                );
+
+                                float tms = UnitToMS(segmentPos.z);
+                                // Debug.LogError(j+" - "+tms+" From "+lastBPM+" to "+BPM+" "+sLenght);
+                                n.Segments[j, 2] = MStoUnit(GetTimeByMeasure(GetBeatMeasureByTime(tms, lastBPM)));
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -6060,8 +6085,9 @@ namespace MiKu.NET {
             lights.Clear();
 
             // Reset the current time
-            _currentTime = 0;
-            MoveCamera(true, _currentTime);
+            CurrentTime = 0;
+            CurrentSelectedMeasure = 0;
+            MoveCamera(true, CurrentTime);
 
             UpdateTotalNotes(true);
 
@@ -6178,8 +6204,9 @@ namespace MiKu.NET {
             resizedNotes.Clear();			
 
             // Reset the current time
-            _currentTime = 0;
-            MoveCamera(true, _currentTime);
+            CurrentTime = 0;
+            CurrentSelectedMeasure = 0;
+            MoveCamera(true, CurrentTime);
         }
 
         /// <summary>
@@ -6472,14 +6499,18 @@ namespace MiKu.NET {
         /// Play the preview of the audioc clip on step while the song is paused
         /// </summary>
         void PlayStepPreview() {
-            if(doScrollSound == 1) {
-                PlaySFX(m_StepSound);
-            } else if(doScrollSound == 0) {
-                currentTimeSecs = (StartOffset > 0) ? Mathf.Max(0, (_currentTime / MS) - (StartOffset / MS) ) : (_currentTime / MS);
-                previewAud.volume = audioSource.volume;
-                previewAud.time = currentTimeSecs;
-                previewAud.Play();
-            }            
+            if(CurrentTime > 0 && CurrentTime < (TrackDuration * MS) - (END_OF_SONG_OFFSET * MS)) {
+                if(doScrollSound == 1) {
+                    PlaySFX(m_StepSound);
+                } else if(doScrollSound == 0) {
+                    currentTimeSecs = (StartOffset > 0) ? Mathf.Max(0, (CurrentTime / MS) - (StartOffset / MS) ) : (CurrentTime / MS);
+                    if(currentTimeSecs > 0 && currentTimeSecs < (TrackDuration * MS)) {
+                        previewAud.volume = audioSource.volume;
+                        previewAud.time = currentTimeSecs;
+                        previewAud.Play();
+                    }                
+                } 
+            }                       
         }
 
         /// <summary>
@@ -6883,6 +6914,7 @@ namespace MiKu.NET {
                 ToggleWorkingStateAlertOff();		
             } else {
                 CurrentSelection.startTime = CurrentTime;
+                CurrentSelection.startMeasure = CurrentSelectedMeasure;
                 ToggleWorkingStateAlertOn(StringVault.Info_UserOnSelectionMode);
             }
             
@@ -6890,12 +6922,14 @@ namespace MiKu.NET {
 
         private void SelectAll() {
             CurrentSelection.startTime = 0;
+            CurrentSelection.startMeasure = 0;
             CurrentSelection.endTime = TrackDuration * 1000;
             UpdateSelectionMarker();
         }
 
         private void ClearSelectionMarker() {
             CurrentSelection.startTime = 0;
+            CurrentSelection.startMeasure = 0;
             CurrentSelection.endTime = 0;
             UpdateSelectionMarker();
         }
@@ -6935,6 +6969,22 @@ namespace MiKu.NET {
         }
 
         /// <value>
+        /// The Current measure in with the editon plane is
+        /// </value>
+        public static float CurrentSelectedMeasure
+        {
+            get
+            {
+                return (s_instance != null) ? s_instance.currentSelectedMeasure : 0;
+            }
+
+            set
+            {
+                s_instance.currentSelectedMeasure = value;
+            }
+        }
+
+        /// <value>
         /// The Current time in with the track is
         /// </value>
         public static float CurrentTime
@@ -6957,7 +7007,7 @@ namespace MiKu.NET {
         {
             get
             {
-                return (s_instance != null) ? s_instance.MStoUnit(s_instance._currentTime) : 0;
+                return (s_instance != null) ? s_instance.MStoUnit(CurrentTime) : 0;
             }
         }
 
@@ -7152,8 +7202,7 @@ namespace MiKu.NET {
             get {
                 return s_instance.trackInfo;
             }
-        }        
-
+        }
         #endregion
     }
 }

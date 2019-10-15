@@ -584,6 +584,7 @@ public class Miku_LoadFileHelper : MonoBehaviour {
 				chart.CustomDifficultySpeed = 1;
 				chart.Tags = new List<string>();
 				chart.Lights = defaultLights;
+				chart.UsingBeatMeasure = true;
 				
 				Serializer.ChartData = chart;
 			}
