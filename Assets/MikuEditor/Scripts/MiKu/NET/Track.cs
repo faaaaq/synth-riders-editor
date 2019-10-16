@@ -914,6 +914,8 @@ namespace MiKu.NET {
 
         void OnEnable() {	
             try {
+                Application.logMessageReceivedThreaded += HandleLog;
+
                 UpdateDisplayTime(CurrentTime);
                 m_MetaNotesColider.SetActive(false);
                 
@@ -1647,6 +1649,8 @@ namespace MiKu.NET {
             Serializer.CurrentAudioFileToCompress = null;
             SaveEditorUserPrefs();
             DoAbortThread();
+
+            Application.logMessageReceivedThreaded -= HandleLog;
         }
 
         void OnDrawGizmos() {
@@ -3638,6 +3642,7 @@ namespace MiKu.NET {
                     crouchMeasure = crouchs[index];
                 }
 
+                index = -1;
                 List<Slide> slides = GetCurrentMovementListByDifficulty();
                 slides = slides.OrderBy(x => x.time).ToList();
                 if(slides != null && slides.Count > 0) {
@@ -3703,6 +3708,7 @@ namespace MiKu.NET {
                     crouchMeasure = crouchs[index];
                 }
 
+                index = -1;
                 List<Slide> slides = GetCurrentMovementListByDifficulty();
                 slides = slides.OrderByDescending(x => x.time).ToList();
                 if(slides != null && slides.Count > 0) {
@@ -7113,6 +7119,13 @@ namespace MiKu.NET {
             PlayerPrefs.SetFloat(GRIDSIZE_KEY, gridManager.SeparationSize);
             PlayerPrefs.SetInt(STEPTYPE_KEY, (int)currentStepType);
             // Debug.LogError($"Scroll sound is {doScrollSound}");
+        }
+
+        void HandleLog(string logString, string stackTrace, LogType type)
+        {
+            if(type == LogType.Exception) {
+                Serializer.WriteToLogFile(logString+" "+stackTrace);
+            }        
         }
 
         /// <summary>
