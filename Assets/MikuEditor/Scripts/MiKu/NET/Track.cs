@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Numerics;
+//using System.Numerics;
 using System.Text;
 using System.Threading;
 using DG.Tweening;
@@ -164,6 +164,12 @@ namespace MiKu.NET {
             MouseSentitivity,
             CustomDifficultyEdit,
             TagEdition
+        }
+
+        enum StepType {
+            Measure,
+            Notes,
+            Walls
         }
 
 #region Constanst
@@ -529,6 +535,12 @@ namespace MiKu.NET {
         [SerializeField]
         private TextMeshProUGUI m_StateInfoText;
 
+        [SerializeField]
+        private GameObject m_StepTypeObject;
+
+        [SerializeField]
+        private TextMeshProUGUI m_StepTypeText;
+
         [Space(20)]
         [SerializeField]
         private GridGuideController m_GridGuideController;
@@ -775,6 +787,7 @@ namespace MiKu.NET {
         private const string AUTOSAVE_KEY = "com.synth.editor.AutoSave"; 
         private const string SCROLLSOUND_KEY = "com.synth.editor.ScrollSound";
         private const string GRIDSIZE_KEY = "com.synth.editor.GridSize";
+        private const string STEPTYPE_KEY = "com.synth.editor.StepType";
 
         // 
         private WaitForSeconds pointEightWait;
@@ -830,6 +843,8 @@ namespace MiKu.NET {
 
         // The max amount of measure an beat can be divide
         private const int MAX_MEASURE_DIVIDER = 64;
+
+        private StepType currentStepType = StepType.Measure;
         
 
         // Use this for initialization
@@ -1287,7 +1302,7 @@ namespace MiKu.NET {
                     TogglePlay();
 
                     if(!isCTRLDown && !isALTDown) {
-                        MoveCamera(true, GetNextStepPoint());
+                        MoveCamera(true, GetNextStepPoint(true));
                         DrawTrackXSLines();
                     } else if(isCTRLDown) {
                         ChangeStepMeasure(true);
@@ -1299,7 +1314,7 @@ namespace MiKu.NET {
                 } else {
 
                     if(!isCTRLDown && !isALTDown) {
-                        MoveCamera(true, GetNextStepPoint());
+                        MoveCamera(true, GetNextStepPoint(true));
                         
                         DrawTrackXSLines();
                         PlayStepPreview();
@@ -1318,7 +1333,7 @@ namespace MiKu.NET {
                     TogglePlay();
 
                     if(!isCTRLDown && !isALTDown) {
-                        MoveCamera(true, GetPrevStepPoint());
+                        MoveCamera(true, GetPrevStepPoint(true));
                         DrawTrackXSLines();
                         
                     } else if(isCTRLDown) {
@@ -1330,7 +1345,7 @@ namespace MiKu.NET {
                 } else {
 
                     if(!isCTRLDown && !isALTDown) {
-                        MoveCamera(true, GetPrevStepPoint());
+                        MoveCamera(true, GetPrevStepPoint(true));
                         DrawTrackXSLines();
                         PlayStepPreview();
                     } else if(isCTRLDown){
@@ -1494,11 +1509,7 @@ namespace MiKu.NET {
 
             if( Input.GetButtonDown("Mirrored inverse Y") && isOnMirrorMode) { 
                 YAxisInverse = !YAxisInverse;
-            }
-
-            if( Input.GetButtonDown("TAB")) {
-                ToggleSideBars();
-            }
+            }            
 
             if(Input.GetButtonDown("Select All") && isCTRLDown) {
                 if(!isPlaying && !isOnLongNoteMode && !PromtWindowOpen) {
@@ -1536,6 +1547,16 @@ namespace MiKu.NET {
                     ToggleNoteDirectionMarker(Note.NoteDirection.RightTop);
                 }
             }
+
+            if(Input.GetKeyDown(KeyCode.Tab)) {
+                if(!promtWindowOpen && !isPlaying) {
+                    if(isCTRLDown) {
+                        ToggleSideBars();
+                    } else {
+                        ToggleStepType();
+                    }
+                }                
+            }
 #endregion
 
             if(markerWasUpdated) {
@@ -1558,6 +1579,34 @@ namespace MiKu.NET {
                 previewAud.time = 0;
             }
 
+        }
+
+        private void ToggleStepType(bool displayOnly = false)
+        {
+            if(!displayOnly) {
+                if(currentStepType == StepType.Measure) {
+                    currentStepType = StepType.Notes;
+                } else if(currentStepType == StepType.Notes) {
+                    currentStepType = StepType.Walls;
+                } else {
+                    currentStepType = StepType.Measure;
+                }
+            }            
+
+            if(m_StepTypeText != null) {
+                m_StepTypeText.SetText(string.Format(
+                    StringVault.Info_StepType,
+                    currentStepType.ToString()
+                ));
+            }
+
+            if(m_StepTypeObject != null) {
+                if(currentStepType != StepType.Measure) {
+                    m_StepTypeObject.SetActive(true);
+                } else {
+                    m_StepTypeObject.SetActive(false);
+                }
+            }
         }
 
         void FixedUpdate() {
@@ -1979,7 +2028,7 @@ namespace MiKu.NET {
                     double scaleFactor = DSP.Window.ScaleFactor.Signal (windowCoefs);
 
                     // Perform the FFT and convert output (complex numbers) to Magnitude
-                    Complex[] fftSpectrum = fft.Execute (scaledSpectrumChunk);
+                    System.Numerics.Complex[] fftSpectrum = fft.Execute (scaledSpectrumChunk);
                     double[] scaledFFTSpectrum = DSPLib.DSP.ConvertComplex.ToMagnitude (fftSpectrum);
                     scaledFFTSpectrum = DSP.Math.Multiply (scaledFFTSpectrum, scaleFactor);
 
@@ -2139,7 +2188,7 @@ namespace MiKu.NET {
         /// Cycles the current step measure mode. Evens mode will only snap to evens, any snaps to any, etc.
         /// </summary>
         public void CycleStepMeasure() {
-            Debug.Log(MBPMIncreaseFactor);
+            // Debug.Log(MBPMIncreaseFactor);
 
             switch (_stepSelectorCycleMode) {
                 case StepSelectorCycleMode.Fours:
@@ -3537,7 +3586,152 @@ namespace MiKu.NET {
             _fromBPM = _fromBPM == 0 ? BPM : _fromBPM;
             return ( ((_ms * MINUTE) / _fromBPM) / MAX_MEASURE_DIVIDER ) * MS;
         }
-        
+
+        float CheckForMeasureError(float targetMeasure) {
+            Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();            
+            List<float> keys_sorted = workingTrack.Keys.ToList();
+
+            // Check for notes
+            foreach(float measureKey in keys_sorted) {
+                if(Mathf.Abs(measureKey - targetMeasure) <= 0.1f) {
+                    return measureKey;
+                }
+            }
+
+            return targetMeasure;
+        }      
+
+        float GetNextStepByObject() {
+            if(currentStepType == StepType.Notes) {
+                Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();            
+                List<float> keys_sorted = workingTrack.Keys.ToList();
+                keys_sorted = keys_sorted.OrderBy(x => x).ToList();
+                int index = -1;
+
+                if(keys_sorted.Contains(CurrentSelectedMeasure)) {
+                    index = keys_sorted.FindIndex(x => x == CurrentSelectedMeasure) + 1;                    
+                } else {
+                    index = keys_sorted.FindIndex(x => x > CurrentSelectedMeasure); 
+                }
+
+                if(index >= 0) {
+                    index = Mathf.Min(index, keys_sorted.Count - 1);
+                    return keys_sorted[index];
+                }                
+            } else if(currentStepType == StepType.Walls) {
+                List<float> crouchs = GetCurrentMovementListByDifficulty(false);
+                crouchs = crouchs.OrderBy(x => x).ToList();
+                int index = -1;
+                float crouchMeasure = -1;
+                float slideMeasure = -1;
+
+                if(crouchs != null && crouchs.Count > 0) {
+                    if(crouchs.Contains(CurrentSelectedMeasure)) {
+                        index = crouchs.FindIndex(x => x == CurrentSelectedMeasure) + 1;                    
+                    } else {
+                        index = crouchs.FindIndex(x => x > CurrentSelectedMeasure); 
+                    }
+                }
+
+                if(index >= 0) {
+                    index = Mathf.Min(index, crouchs.Count - 1);
+                    crouchMeasure = crouchs[index];
+                }
+
+                List<Slide> slides = GetCurrentMovementListByDifficulty();
+                slides = slides.OrderBy(x => x.time).ToList();
+                if(slides != null && slides.Count > 0) {
+                    index = slides.FindIndex(x => x.time == CurrentSelectedMeasure);
+                    if(index >= 0) {
+                        index += 1;                    
+                    } else {
+                        index = slides.FindIndex(x => x.time > CurrentSelectedMeasure);
+                    }
+                }
+
+                if(index >= 0) {
+                    index = Mathf.Min(index, slides.Count - 1);
+                    slideMeasure = slides[index].time;
+                }
+
+                if(crouchMeasure > 0 && slideMeasure > 0) {
+                    return Mathf.Min(crouchMeasure, slideMeasure);
+                } else {
+                    return Mathf.Max(crouchMeasure, slideMeasure, CurrentSelectedMeasure);
+                }
+            }
+            
+
+            return CurrentSelectedMeasure;
+        }   
+
+
+        float GetPrevStepByObject() {
+            if(currentStepType == StepType.Notes) {
+                Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();            
+                List<float> keys_sorted = workingTrack.Keys.ToList();
+                keys_sorted = keys_sorted.OrderByDescending(x => x).ToList();
+                int index = -1;
+
+                if(keys_sorted.Contains(CurrentSelectedMeasure)) {
+                    index = keys_sorted.FindIndex(x => x == CurrentSelectedMeasure) + 1;                    
+                } else {
+                    index = keys_sorted.FindIndex(x => x < CurrentSelectedMeasure); 
+                }
+
+                if(index >= 0) {
+                    index = Mathf.Min(index, keys_sorted.Count - 1);
+                    return keys_sorted[index];
+                }                
+            } else if(currentStepType == StepType.Walls) {
+                List<float> crouchs = GetCurrentMovementListByDifficulty(false);
+                crouchs = crouchs.OrderByDescending(x => x).ToList();
+                int index = -1;
+                float crouchMeasure = -1;
+                float slideMeasure = -1;
+
+                if(crouchs != null && crouchs.Count > 0) {
+                    if(crouchs.Contains(CurrentSelectedMeasure)) {
+                        index = crouchs.FindIndex(x => x == CurrentSelectedMeasure) + 1;                    
+                    } else {
+                        index = crouchs.FindIndex(x => x < CurrentSelectedMeasure); 
+                    }
+                }
+
+                if(index >= 0) {
+                    index = Mathf.Min(index, crouchs.Count - 1);
+                    crouchMeasure = crouchs[index];
+                }
+
+                List<Slide> slides = GetCurrentMovementListByDifficulty();
+                slides = slides.OrderByDescending(x => x.time).ToList();
+                if(slides != null && slides.Count > 0) {
+                    index = slides.FindIndex(x => x.time == CurrentSelectedMeasure);
+                    if(index >= 0) {
+                        index += 1;                    
+                    } else {
+                        index = slides.FindIndex(x => x.time < CurrentSelectedMeasure);
+                    }
+                }
+
+                if(index >= 0) {
+                    index = Mathf.Min(index, slides.Count - 1);
+                    slideMeasure = slides[index].time;
+                }
+
+                if(crouchMeasure > 0 && slideMeasure > 0) {
+                    return Mathf.Min(crouchMeasure, slideMeasure);
+                } else {
+                    if(crouchMeasure > 0 || slideMeasure > 0) {
+                        float tempM = Mathf.Max(crouchMeasure, slideMeasure);
+                        return Mathf.Min(tempM, CurrentSelectedMeasure);
+                    }                   
+                }
+            }
+            
+
+            return CurrentSelectedMeasure;
+        } 
         
         /// <summary>
         /// Return the next point to displace the stage
@@ -3546,22 +3740,32 @@ namespace MiKu.NET {
         /// Based on the values of <see cref="K"/> and <see cref="MBPM"/>
         /// </remarks>
         /// <returns>Returns <typeparamref name="float"/></returns>
-        float GetNextStepPoint() {
-            if(lastMeasureDivider > MBPMIncreaseFactor) { 
-                CurrentSelectedMeasure = GetBeatMeasureByTime(GetCloseStepMeasure(CurrentTime, true));
+        float GetNextStepPoint(bool mouseWheel = false) {
+            if(currentStepType == StepType.Measure || mouseWheel) {
+                if(lastMeasureDivider > MBPMIncreaseFactor) { 
+                    CurrentSelectedMeasure = GetBeatMeasureByTime(GetCloseStepMeasure(CurrentTime, true));
+                } else {
+                    CurrentSelectedMeasure += (MAX_MEASURE_DIVIDER/MBPMIncreaseFactor);
+                }
+                lastMeasureDivider = (int)MBPMIncreaseFactor;
+
+                if(CurrentSelectedMeasure > GetBeatMeasureByTime((TM-1)*K)) {
+                    CurrentSelectedMeasure = GetBeatMeasureByTime((TM-1)*K);
+                }
+
+                if(MBPMIncreaseFactor % 3 > 0) {
+                    CurrentSelectedMeasure = (int)CurrentSelectedMeasure;
+                }
+
+                CurrentSelectedMeasure = CheckForMeasureError(CurrentSelectedMeasure);
             } else {
-                CurrentSelectedMeasure += (MAX_MEASURE_DIVIDER/MBPMIncreaseFactor);
-            }
-            lastMeasureDivider = (int)MBPMIncreaseFactor;
-            
+                CurrentSelectedMeasure = GetNextStepByObject();
+            } 
 
             CurrentTime = GetTimeByMeasure(CurrentSelectedMeasure);
             CurrentTime = Mathf.Min(CurrentTime, (TM-1)*K);
-            if(CurrentSelectedMeasure > GetBeatMeasureByTime((TM-1)*K)) {
-                CurrentSelectedMeasure = GetBeatMeasureByTime((TM-1)*K);
-            }
-            /* CurrentSelectedMeasure = Mathf.Ceil(CurrentSelectedMeasure);
-            Debug.LogError("Current measurer divider "+lastMeasureDivider+" target measure "+currentSelectedMeasure+" target time "+CurrentTime); */
+            // Debug.LogError("Current Measure "+CurrentSelectedMeasure);
+            /* Debug.LogError("Current measurer divider "+lastMeasureDivider+" target measure "+currentSelectedMeasure+" target time "+CurrentTime); */
             return MStoUnit(CurrentTime);
         }
 
@@ -3572,21 +3776,30 @@ namespace MiKu.NET {
         /// Based on the values of <see cref="K"/> and <see cref="MBPM"/>
         /// </remarks>
         /// <returns>Returns <typeparamref name="float"/></returns>
-        float GetPrevStepPoint() {
-            if(lastMeasureDivider > MBPMIncreaseFactor) { 
-                CurrentSelectedMeasure = GetBeatMeasureByTime(GetCloseStepMeasure(CurrentTime, false));
+        float GetPrevStepPoint(bool mouseWheel = false) {
+            if(currentStepType == StepType.Measure || mouseWheel) {
+                if(lastMeasureDivider > MBPMIncreaseFactor) { 
+                    CurrentSelectedMeasure = GetBeatMeasureByTime(GetCloseStepMeasure(CurrentTime, false));
+                } else {
+                    CurrentSelectedMeasure -= (MAX_MEASURE_DIVIDER/MBPMIncreaseFactor);
+                }
+                lastMeasureDivider = (int)MBPMIncreaseFactor;
+
+                if(CurrentSelectedMeasure < 0) {
+                    CurrentSelectedMeasure = 0;
+                }
+
+                if(MBPMIncreaseFactor % 3 > 0) {
+                    CurrentSelectedMeasure = (int)CurrentSelectedMeasure;
+                } 
+
+                CurrentSelectedMeasure = CheckForMeasureError(CurrentSelectedMeasure);
             } else {
-                CurrentSelectedMeasure -= (MAX_MEASURE_DIVIDER/MBPMIncreaseFactor);
-            }
-            lastMeasureDivider = (int)MBPMIncreaseFactor;
-            
+                CurrentSelectedMeasure = GetPrevStepByObject();
+            } 
 
             CurrentTime = GetTimeByMeasure(CurrentSelectedMeasure);
             CurrentTime = Mathf.Max(0, CurrentTime);
-
-            if(CurrentSelectedMeasure < 0) {
-                CurrentSelectedMeasure = 0;
-            }
             /* CurrentSelectedMeasure = Mathf.Round(CurrentSelectedMeasure);
             Debug.LogError("Current measurer divider "+lastMeasureDivider+" target measure "+currentSelectedMeasure+" target time "+CurrentTime); */
             return MStoUnit(CurrentTime);
@@ -3798,6 +4011,9 @@ namespace MiKu.NET {
 
             // Clear the effect stack
             effectsStacks.Clear();
+
+            m_flashLight.DOKill();
+            m_flashLight.intensity = 1;
         }
 
         /// <summary>
@@ -5911,7 +6127,7 @@ namespace MiKu.NET {
                 LoadChartNotes();
             } catch(Exception ex) {
                 LogMessage("BPM update error");
-                LogMessage(ex.ToString());
+                Debug.LogError(ex.ToString());
                 Serializer.WriteToLogFile("BPM update error");
                 Serializer.WriteToLogFile(ex.ToString());
             }
@@ -5930,9 +6146,8 @@ namespace MiKu.NET {
             if(workingTrack != null && workingTrack.Count > 0) {
                 // Iterate each entry on the Dictionary and get the note to update
                 foreach( KeyValuePair<float, List<Note>> kvp in workingTrack )
-                {
-                    List<Note> _notes = kvp.Value;		
-
+                {                    
+                    List<Note> _notes = kvp.Value;	
                     // Iterate each note and update its info
                     for(int i = 0; i < _notes.Count; i++) {
                         Note n = _notes[i];
@@ -5941,22 +6156,24 @@ namespace MiKu.NET {
                         // Get the new position using the new constants
                         float newPos = MStoUnit(GetTimeByMeasure(kvp.Key));
                         // And update the value on the Dictionary
-                        n.Position = new float[3] { n.Position[0], n.Position[1], newPos };		
-                        float sLenght = n.Segments.GetLength(0);
-                        if(n.Segments != null && sLenght > 0) {		
-                            for(int j = 0; j < sLenght; ++j) {
-                                Vector3 segmentPos = transform.InverseTransformPoint(
-                                        n.Segments[j, 0],
-                                        n.Segments[j, 1], 
-                                        n.Segments[j, 2]
-                                );
+                        n.Position = new float[3] { n.Position[0], n.Position[1], newPos };	
+                        if(n.Segments != null ) {
+                            float sLenght = n.Segments.GetLength(0);
+                            if(sLenght > 0) {		
+                                for(int j = 0; j < sLenght; ++j) {
+                                    Vector3 segmentPos = transform.InverseTransformPoint(
+                                            n.Segments[j, 0],
+                                            n.Segments[j, 1], 
+                                            n.Segments[j, 2]
+                                    );
 
-                                float tms = UnitToMS(segmentPos.z);
-                                // Debug.LogError(j+" - "+tms+" From "+lastBPM+" to "+BPM+" "+sLenght);
-                                n.Segments[j, 2] = MStoUnit(GetTimeByMeasure(GetBeatMeasureByTime(tms, lastBPM)));
+                                    float tms = UnitToMS(segmentPos.z);
+                                    // Debug.LogError(j+" - "+tms+" From "+lastBPM+" to "+BPM+" "+sLenght);
+                                    n.Segments[j, 2] = MStoUnit(GetTimeByMeasure(GetBeatMeasureByTime(tms, lastBPM)));
+                                }
                             }
-                        }
-                    }
+                        }	                        
+                    }                    
                 }
             }
         }
@@ -6875,8 +7092,11 @@ namespace MiKu.NET {
             MiddleButtonSelectorType = PlayerPrefs.GetInt(MIDDLE_BUTTON_SEL_KEY, 0);
             canAutoSave = ( PlayerPrefs.GetInt(AUTOSAVE_KEY, 1) > 0) ? true : false;
             doScrollSound = PlayerPrefs.GetInt(SCROLLSOUND_KEY, 1);
+            // Debug.LogError($"Scroll sound is {doScrollSound}");
             gridManager.SeparationSize = (PlayerPrefs.GetFloat(GRIDSIZE_KEY, 0.1365f));
             gridManager.DrawGridLines();
+            currentStepType = (StepType)PlayerPrefs.GetInt(STEPTYPE_KEY, 0);
+            ToggleStepType(true);
         }
 
         private void SaveEditorUserPrefs() {
@@ -6891,6 +7111,8 @@ namespace MiKu.NET {
             PlayerPrefs.SetInt(AUTOSAVE_KEY, (canAutoSave) ? 1 : 0);
             PlayerPrefs.SetInt(SCROLLSOUND_KEY, doScrollSound);
             PlayerPrefs.SetFloat(GRIDSIZE_KEY, gridManager.SeparationSize);
+            PlayerPrefs.SetInt(STEPTYPE_KEY, (int)currentStepType);
+            // Debug.LogError($"Scroll sound is {doScrollSound}");
         }
 
         /// <summary>

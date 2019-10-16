@@ -310,6 +310,10 @@ namespace Shogoki.Utils {
         [SerializeField]
 		[TextArea(3, 8)]
 		private string info_GridSnapp = "Grid snapp {0}";
+
+        [SerializeField]
+		[TextArea(3, 8)]
+		private string info_StepType = "Step Type: {0}";
 #endregion		
 
         void Start () {
@@ -908,6 +912,14 @@ namespace Shogoki.Utils {
             get 
             {
                 return s_instance.info_GridSnapp;
+            }
+        }
+
+        public static string Info_StepType
+        {
+            get
+            {
+                return s_instance.info_StepType;
             }
         }
         
