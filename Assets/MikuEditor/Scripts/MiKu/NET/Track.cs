@@ -592,6 +592,10 @@ namespace MiKu.NET {
         private GameObject m_statsAdminOnlyWrap;
         [SerializeField]
         private TextMeshProUGUI m_statsAdminOnlyText;
+        [SerializeField]
+        private GameObject m_FullStatsContainer;
+        [SerializeField]
+        private TextMeshProUGUI m_FullStatsText;
 
         [Space(20)]
         [Header("Camera Elements")]
@@ -845,6 +849,8 @@ namespace MiKu.NET {
         private const int MAX_MEASURE_DIVIDER = 64;
 
         private StepType currentStepType = StepType.Measure;
+
+        private StringBuilder statsSTRBuilder;
         
 
         // Use this for initialization
@@ -889,6 +895,8 @@ namespace MiKu.NET {
             }	
 
             currentLockeMode = Cursor.lockState;
+
+            m_FullStatsContainer.SetActive(false);
 
             s_instance = this;			
         }
@@ -1451,7 +1459,14 @@ namespace MiKu.NET {
             }
 
             if(Input.GetKeyDown(KeyCode.F12) && !PromtWindowOpen && !IsPlaying) {
-                ToggleAdminMode();			
+                if(isCTRLDown) {
+                    ToggleAdminMode();
+                } else {
+                    m_FullStatsContainer.SetActive(!m_FullStatsContainer.activeInHierarchy);
+                    if(m_FullStatsContainer.activeInHierarchy) {
+                        GetCurrentStats();
+                    }                    
+                }                			
             }
 
             if(Input.GetKeyDown(KeyCode.F11) && !PromtWindowOpen && !IsPlaying) {
@@ -2934,7 +2949,10 @@ namespace MiKu.NET {
                 Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, "Clipboard Format Error!");
                 Serializer.WriteToLogFile(e.ToString());
             }
-            		
+
+            if(m_FullStatsContainer.activeInHierarchy) {
+                GetCurrentStats();
+            }
             isBusy = false;	
         }
         
@@ -4218,7 +4236,7 @@ namespace MiKu.NET {
                 }
             }
 
-            Track.LogMessage("Current Special ID: "+s_instance.currentSpecialSectionID);
+            // Track.LogMessage("Current Special ID: "+s_instance.currentSpecialSectionID);
 
             if(CurrentChart.Effects == null) {
                 CurrentChart.Effects = new Effects();
@@ -4289,6 +4307,10 @@ namespace MiKu.NET {
 
             specialSectionStarted = false;
             isBusy = false;
+
+            if(m_FullStatsContainer.activeInHierarchy) {
+                GetCurrentStats();
+            }
         }
 
         /// <summary>
@@ -4779,6 +4801,10 @@ namespace MiKu.NET {
                         }
                         // Uncoment to enable sound on line end
                         // AddTimeToSFXList(CurrentLongNote.lastSegment);
+
+                        if(m_FullStatsContainer.activeInHierarchy) {
+                            GetCurrentStats();
+                        }
                     } else {
                         abortLongNote = true;
                         Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, StringVault.Info_LongNoteModeAborted);
@@ -5107,7 +5133,7 @@ namespace MiKu.NET {
                     && time <= s_instance.GetBeatMeasureByTime(CurrentSelection.endTime)).ToList();
                 
             } else {
-                RefreshCurrentTime();
+                // RefreshCurrentTime();
 
                 keys_tofilter = keys_tofilter.Where(time => time == CurrentSelectedMeasure).ToList();
 
@@ -5220,6 +5246,10 @@ namespace MiKu.NET {
             slides_tofilter.Clear();
             lights_tofilter.Clear();
             ClearSelectionMarker();
+
+            if(m_FullStatsContainer.activeInHierarchy) {
+                GetCurrentStats();
+            }
             isBusy = false;	
         }
 
@@ -5437,6 +5467,10 @@ namespace MiKu.NET {
                                 totalNotes--;
                                 s_instance.UpdateTotalNotes(false, true);
 
+                                if(s_instance.m_FullStatsContainer.activeInHierarchy) {
+                                    s_instance.GetCurrentStats();
+                                }
+
                                 if(totalNotes <= 0) {
                                     workingTrack.Remove(CurrentSelectedMeasure);
                                     s_instance.hitSFXSource.Remove(CurrentTime);
@@ -5522,6 +5556,10 @@ namespace MiKu.NET {
                         workingTrack[CurrentSelectedMeasure].Add(n);
                         s_instance.AddNoteGameObjectToScene(n);
                         s_instance.UpdateTotalNotes();	
+
+                        if(s_instance.m_FullStatsContainer.activeInHierarchy) {
+                            s_instance.GetCurrentStats();
+                        }
                     } else {
                         Track.LogMessage("Time does not exist");
                     }								
@@ -5866,7 +5904,7 @@ namespace MiKu.NET {
                 return;
             }
 
-            s_instance.RefreshCurrentTime();
+            // s_instance.RefreshCurrentTime();
 
 
             GameObject moveGO = null;
@@ -5976,7 +6014,11 @@ namespace MiKu.NET {
                         Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Info, onText);	
                     }
                 }
-            } 		
+            }
+            
+            if(s_instance.m_FullStatsContainer.activeInHierarchy) {
+                s_instance.GetCurrentStats();
+            }	
         }		
 
         /// <summary>
@@ -6313,8 +6355,11 @@ namespace MiKu.NET {
             MoveCamera(true, CurrentTime);
 
             UpdateTotalNotes(true);
-
             hitSFXSource.Clear();
+
+            if(m_FullStatsContainer.activeInHierarchy) {
+                GetCurrentStats();
+            }
 
             isBusy = false;
         }
@@ -7183,6 +7228,180 @@ namespace MiKu.NET {
                 m_selectionMarker.SetPosition(0, selectionStartPos);
                 m_selectionMarker.SetPosition(1, selectionEndPos);;
             }
+        }
+
+        private void GetCurrentStats() {
+            if(statsSTRBuilder == null) {
+                statsSTRBuilder = new StringBuilder();
+            } else {
+                statsSTRBuilder.Length = 0;
+            }
+
+            uint totalNotes, totalNotesLeft, totalNotesRight, totalNotesSpecials, totalLines;
+            totalNotes = totalNotesLeft = totalNotesRight = totalNotesSpecials = totalLines = 0;
+            uint totalCrossOvers, totalJumps;
+            totalCrossOvers = totalJumps = 0;
+            float avgNotesHeight, highestNote, lowestNote;
+            avgNotesHeight = highestNote = lowestNote = 0;
+            float lastNoteX = -500f;
+            float lastNoteY = -500f;
+            float avgLinesLeght = 0;
+            float longestLine, shortestLine;
+            longestLine = shortestLine = 0;
+
+            bool checkForJump = false;
+            float lastJumpY = 0;
+            float lastJumpKey = 0;
+            Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();
+            Dictionary<float, List<Note>>.ValueCollection valueColl = workingTrack.Values;
+            
+            List<float> keys_sorted = workingTrack.Keys.ToList();
+            keys_sorted.Sort();
+            if(workingTrack != null && workingTrack.Count > 0) {
+                foreach( float key in keys_sorted ) {
+                    lastNoteX = -500f;
+                    lastNoteY = -500f;
+
+                    List<Note> _notes = workingTrack[key];
+                    // Iterate each note and update its info
+                    for(int i = 0; i < _notes.Count; i++) {
+                        Note n = _notes[i];
+                        Vector3 currPos = transform.InverseTransformPoint(
+                            n.Position[0],
+                            n.Position[1], 
+                            n.Position[2]
+                        );
+                        
+                        totalNotes++;
+                        if(n.Type == Note.NoteType.LeftHanded) {
+                            totalNotesLeft++;
+                        } else if(n.Type == Note.NoteType.RightHanded) {
+                            totalNotesRight++;                            
+                        } else {
+                            totalNotesSpecials++;
+                        }   
+
+                        if(n.Segments != null && n.Segments.GetLength(0) > 0) {
+                            totalLines++;
+                            Vector3 segmentPosEnd= transform.InverseTransformPoint(
+                                n.Segments[n.Segments.GetLength(0) - 1, 0],
+                                n.Segments[n.Segments.GetLength(0) - 1, 1], 
+                                n.Segments[n.Segments.GetLength(0) - 1, 2]
+                            );
+
+                            avgLinesLeght += UnitToMS(segmentPosEnd.z - currPos.z) / MS;
+                            longestLine = Mathf.Max(longestLine, UnitToMS(segmentPosEnd.z - currPos.z) / MS);
+                            if(shortestLine == 0) {
+                                shortestLine = longestLine;
+                            } else {
+                                shortestLine = Mathf.Min(shortestLine, UnitToMS(segmentPosEnd.z - currPos.z) / MS);
+                            }                            
+                        }  
+
+                        if(lastNoteX <= -500f) {
+                            lastNoteX = currPos.x;
+                        } else {
+                            if(currPos.x > lastNoteX && n.Type == Note.NoteType.LeftHanded
+                                || currPos.x < lastNoteX && n.Type == Note.NoteType.RightHanded) {
+                                totalCrossOvers++;
+                            }
+                        }
+
+                        if(lastNoteY <= -500f) {
+                            lastNoteY = currPos.y;
+                        } else {
+                            if(lastNoteY == currPos.y) {
+                                if(checkForJump) {
+                                    checkForJump = false;
+                                    if(lastJumpY > lastNoteY && key - lastJumpKey <= MAX_MEASURE_DIVIDER) {
+                                        totalJumps++;
+                                    }
+                                } else {
+                                    checkForJump = true;
+                                    lastJumpY = lastNoteY;
+                                    lastJumpKey = key;
+                                }                                
+                            } else {
+                                checkForJump = false;
+                            }
+                        }
+
+                        avgNotesHeight += currPos.y;
+                        highestNote = Mathf.Max(highestNote, currPos.y); 
+                        if(lowestNote == 0) {
+                            lowestNote = highestNote;
+                        } else {
+                            lowestNote = Mathf.Min(lowestNote, currPos.y);
+                        }
+                        
+                    }								
+                }
+
+                if(totalNotes > 0) {
+                    avgNotesHeight = (avgNotesHeight/totalNotes) - 0.2f;
+                    highestNote = highestNote - 0.2f;
+                    lowestNote = lowestNote - 0.2f;
+                }                
+
+                if(totalLines > 0) {
+                    avgLinesLeght = avgLinesLeght / totalLines;
+                }
+            }
+
+            uint totalWalls, totalCrouchs, totalCenter, totalLeft, totalRight, totalDiagLeft, totalDiagRight;
+            totalWalls = totalCrouchs = totalCenter = totalLeft = totalRight = totalDiagLeft = totalDiagRight = 0;
+
+            List<float> crouchs = GetCurrentMovementListByDifficulty(false);
+            if(crouchs != null && crouchs.Count > 0) {
+                for(int i = 0; i < crouchs.Count; ++i) {
+                    totalWalls++;
+                    totalCrouchs++;
+                }
+            }
+
+            List<Slide> slides = GetCurrentMovementListByDifficulty();
+            if(slides != null && slides.Count > 0) {
+                for(int i = 0; i < slides.Count; ++i) {
+                    totalWalls++;
+                    if(GetSlideTagByType(slides[i].slideType) == SLIDE_CENTER_TAG) {
+                        totalCenter++;
+                    } else if(GetSlideTagByType(slides[i].slideType) == SLIDE_LEFT_TAG) {
+                        totalLeft++;
+                    } else if(GetSlideTagByType(slides[i].slideType) == SLIDE_LEFT_DIAG_TAG) {
+                        totalDiagLeft++;
+                    } else if(GetSlideTagByType(slides[i].slideType) == SLIDE_RIGHT_TAG) {
+                        totalRight++;
+                    } else if(GetSlideTagByType(slides[i].slideType) == SLIDE_RIGHT_DIAG_TAG) {
+                        totalDiagRight++;
+                    }
+                }
+            } 
+
+            statsSTRBuilder
+                .AppendFormat("Total Notes - <b>{0}</b>\n", totalNotes)
+                .AppendLine(string.Format("<indent=10%>- Left Notes - <b>{0}</b></indent>", totalNotesLeft))      
+                .AppendLine(string.Format("<indent=10%>- Right Notes - <b>{0}</b></indent>", totalNotesRight))   
+                .AppendLine(string.Format("<indent=10%>- Special Notes - <b>{0}</b></indent>", totalNotesSpecials))   
+                .AppendLine(string.Format("<indent=10%>- Lines - <b>{0}</b></indent>", totalLines))   
+                .AppendLine(string.Format("-------------------------------------------"))
+                .AppendLine(string.Format("Avg notes height - <b>{0}mts</b>", avgNotesHeight.ToString("0.##"))) 
+                .AppendLine(string.Format("Tallest note - <b>{0}mts</b>", highestNote.ToString("0.##")))   
+                .AppendLine(string.Format("Lowest note - <b>{0}mts</b>", lowestNote.ToString("0.##")))
+                .AppendLine(string.Format("Total Crossover - <b>{0}</b>", totalCrossOvers))
+                .AppendLine(string.Format("Total Jumps - <b>{0}</b>", totalJumps))
+                .AppendLine(string.Format("Avg Lines length - <b>{0}s</b>", avgLinesLeght.ToString("0.##")))
+                .AppendLine(string.Format("Longest line - <b>{0}s</b>", longestLine.ToString("0.##")))
+                .AppendLine(string.Format("Shortest line - <b>{0}s</b>", shortestLine.ToString("0.##")))
+                .AppendLine(string.Format("-------------------------------------------"))
+                .AppendLine(string.Format("Total Walls - <b>{0}</b>", totalWalls))
+                .AppendLine(string.Format("<indent=10%>- Center - <b>{0}</b></indent>", totalCenter))      
+                .AppendLine(string.Format("<indent=10%>- Left - <b>{0}</b></indent>", totalLeft))       
+                .AppendLine(string.Format("<indent=10%>- Diagonal Left - <b>{0}</b></indent>", totalDiagLeft))   
+                .AppendLine(string.Format("<indent=10%>- Right - <b>{0}</b></indent>", totalRight))
+                .AppendLine(string.Format("<indent=10%>- Diagonal Right - <b>{0}</b></indent>", totalDiagRight))
+                .AppendLine(string.Format("<indent=10%>- Crouch - <b>{0}</b></indent>", totalCrouchs));
+
+            m_FullStatsText.SetText(statsSTRBuilder.ToString());
         }
 
 #region Setters & Getters
