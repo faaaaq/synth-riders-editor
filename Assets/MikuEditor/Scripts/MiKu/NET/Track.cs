@@ -824,6 +824,7 @@ namespace MiKu.NET {
         private const string SCROLLSOUND_KEY = "com.synth.editor.ScrollSound";
         private const string GRIDSIZE_KEY = "com.synth.editor.GridSize";
         private const string STEPTYPE_KEY = "com.synth.editor.StepType";
+        private const string LASTPLACENOTE_KEY = "com.synth.editor.LastPlaceNote";
 
         // 
         private WaitForSeconds pointEightWait;
@@ -885,6 +886,7 @@ namespace MiKu.NET {
         private StringBuilder statsSTRBuilder;
         private List<Segment> segmentsList;
         private bool lastStepWasAObject = false;
+        private bool showLastPlaceNoted = true;
         
 
         // Use this for initialization
@@ -1633,6 +1635,15 @@ namespace MiKu.NET {
                     if(!isPlaying) {
                         JumpToMeasure(GetPrevBookamrk());
                     }		
+                }
+            }
+
+            if(Input.GetKeyDown(KeyCode.Q)) {
+                showLastPlaceNoted = !showLastPlaceNoted;
+                if(!showLastPlaceNoted) {
+                    notesArea.HideHistoryCircle();
+                } else {
+                    ShowLastNoteShadow();
                 }
             }
 #endregion
@@ -3760,6 +3771,28 @@ namespace MiKu.NET {
             return new LookBackObject(); 
         }
 
+        void ShowLastNoteShadow() {
+            Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();   
+            if(workingTrack.Count > 0 && showLastPlaceNoted) {
+                List<float> keys_sorted = workingTrack.Keys.ToList();
+                keys_sorted = keys_sorted.OrderByDescending(x => x).ToList();
+                if(keys_sorted[0] < CurrentSelectedMeasure) {
+                    List<Note> notes = workingTrack[keys_sorted[0]];
+                    Vector3[] points = new Vector3[notes.Count];
+                    Note.NoteType[] types = new Note.NoteType[notes.Count];
+                    for(int i = 0; i < notes.Count; ++i) {
+                        points[i] = new Vector3(notes[i].Position[0], notes[i].Position[1], 0);
+                        types[i] = notes[i].Type;
+                    }
+                    notesArea.SetHistoryCircleColor(points, types);
+                } else {
+                    notesArea.HideHistoryCircle();
+                }
+            } else {
+                notesArea.HideHistoryCircle();
+            }                     
+        }
+
         float CheckForMeasureError(float targetMeasure) {
             Dictionary<float, List<Note>> workingTrack = GetCurrentTrackDifficulty();
 
@@ -4049,6 +4082,7 @@ namespace MiKu.NET {
             CurrentTime = Mathf.Min(CurrentTime, (TM-1)*K);
             // Debug.LogError("Current Measure "+CurrentSelectedMeasure);
             /* Debug.LogError("Current measurer divider "+lastMeasureDivider+" target measure "+currentSelectedMeasure+" target time "+CurrentTime); */
+            ShowLastNoteShadow();
             return MStoUnit(CurrentTime);
         }
 
@@ -4085,6 +4119,7 @@ namespace MiKu.NET {
 
             CurrentTime = GetTimeByMeasure(CurrentSelectedMeasure);
             CurrentTime = Mathf.Max(0, CurrentTime);
+            ShowLastNoteShadow();
             // Debug.LogError("Current Measure "+CurrentSelectedMeasure);
             /* Debug.LogError("Current measurer divider "+lastMeasureDivider+" target measure "+currentSelectedMeasure+" target time "+CurrentTime); */
             return MStoUnit(CurrentTime);
@@ -7622,6 +7657,7 @@ namespace MiKu.NET {
             gridManager.SeparationSize = (PlayerPrefs.GetFloat(GRIDSIZE_KEY, 0.1365f));
             gridManager.DrawGridLines();
             currentStepType = (StepType)PlayerPrefs.GetInt(STEPTYPE_KEY, 0);
+            showLastPlaceNoted = ( PlayerPrefs.GetInt(LASTPLACENOTE_KEY, 1) > 0) ? true : false;
             ToggleStepType(true);
         }
 
@@ -7638,6 +7674,7 @@ namespace MiKu.NET {
             PlayerPrefs.SetInt(SCROLLSOUND_KEY, doScrollSound);
             PlayerPrefs.SetFloat(GRIDSIZE_KEY, gridManager.SeparationSize);
             PlayerPrefs.SetInt(STEPTYPE_KEY, (int)currentStepType);
+            PlayerPrefs.SetInt(LASTPLACENOTE_KEY, (showLastPlaceNoted) ? 1 : 0);
             // Debug.LogError($"Scroll sound is {doScrollSound}");
         }
 

@@ -14,6 +14,9 @@ namespace MiKu.NET {
         [SerializeField]
         private GameObject m_boundBox;
         private Transform boundBoxTransform;
+        [SerializeField]
+        private GameObject[] m_historyCircle;
+        private Transform[] historyCircleTransform;
 
         [Space(20)]
         [Header("Confort Boundaries")]
@@ -27,13 +30,24 @@ namespace MiKu.NET {
         private float m_intense = 0.76f; */
 
         [Space(20)]
-        [Header("Colors")]
+        [Header("Confortable Colors")]
         [SerializeField]
         private Color m_confortableColor = Color.blue;
         [SerializeField]
         private Color m_moderateColor = Color.yellow;
         [SerializeField]
-        private Color m_intenseColor = Color.red;		
+        private Color m_intenseColor = Color.red;
+
+        [Space(20)]
+        [Header("Note Colors")]
+        [SerializeField]
+        private Color m_leftHandColor = Color.blue;
+        [SerializeField]
+        private Color m_rightHandColor = Color.yellow;
+        [SerializeField]
+        private Color m_OneHandColor = Color.red;
+        [SerializeField]
+        private Color m_BothHandColor = Color.red;	
 
         private GameObject selectedNote;
         private GameObject mirroredNote;
@@ -47,6 +61,7 @@ namespace MiKu.NET {
         /* bool rayEnabled = false; */
 
         SpriteRenderer boundBoxSpriteRenderer;
+        SpriteRenderer[] historyCircleSpriteRenderer;
 
         public LayerMask targetMask = 11;
         private bool isCTRLDown;
@@ -79,6 +94,13 @@ namespace MiKu.NET {
             boundBoxTransform = m_boundBox.transform;
             boundBoxSpriteRenderer = m_boundBox.GetComponent<SpriteRenderer>();
             m_boundBox.SetActive(false);
+
+            historyCircleTransform = new Transform[m_historyCircle.Length];
+            historyCircleSpriteRenderer = new SpriteRenderer[m_historyCircle.Length];
+            for(int i = 0; i < m_historyCircle.Length; ++i) {
+                historyCircleTransform[i] = m_historyCircle[i].transform;
+                historyCircleSpriteRenderer[i] = m_historyCircle[i].GetComponent<SpriteRenderer>();
+            }
         }		
 
         void OnDisable() {
@@ -240,6 +262,30 @@ namespace MiKu.NET {
 
         private void SetBoundaireBoxColor(float distanceToCenter) {
             boundBoxSpriteRenderer.color = GetColorToDistance(distanceToCenter);
+        }
+
+        public void HideHistoryCircle() {
+            foreach(GameObject hc in m_historyCircle) {
+                hc.SetActive(false);
+            }
+        }
+
+        public void SetHistoryCircleColor(Vector3[] points, Charting.Note.NoteType[] types) {
+            HideHistoryCircle();
+
+            for(int i = 0; i < points.Length; ++i) {
+                m_historyCircle[i].SetActive(true);
+                historyCircleTransform[i].localPosition = points[i];
+                if(types[i] == Charting.Note.NoteType.LeftHanded) {
+                    historyCircleSpriteRenderer[i].color = m_leftHandColor;
+                } else if(types[i] == Charting.Note.NoteType.RightHanded) {
+                    historyCircleSpriteRenderer[i].color = m_rightHandColor;
+                } else if(types[i] == Charting.Note.NoteType.OneHandSpecial) {
+                    historyCircleSpriteRenderer[i].color = m_OneHandColor;
+                } else if(types[i] == Charting.Note.NoteType.BothHandsSpecial) {
+                    historyCircleSpriteRenderer[i].color = m_BothHandColor;
+                } 
+            }
         }
 
 #region Static Methods
