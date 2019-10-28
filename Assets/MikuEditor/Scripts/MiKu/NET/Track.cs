@@ -4758,7 +4758,7 @@ namespace MiKu.NET {
             {
                 List<Note> value;
                 if(dict.TryGetValue(keyToUpdate, out value)) {
-                    float newKey = Mathf.Round(GetBeatMeasureByTime(keyToUpdate));
+                    float newKey = Mathf.RoundToInt(GetBeatMeasureByTime(keyToUpdate));
 
                     // increment the key until arriving at one that doesn't already exist
                     if (dict.ContainsKey(newKey))
@@ -5704,6 +5704,83 @@ namespace MiKu.NET {
                 }
 
                 if(foundNote.note.Segments != null && foundNote.note.Segments.GetLength(0) > 0) { 
+                    s_instance.UpdateSegmentsList();
+                }
+            }            
+        }
+
+        /// <summary>
+        /// Change the color of the note found at the passed position
+        /// </summary>
+        /// <param name="targetPosition">Vector3 position in where to find the note to mirror</param>
+        public static void TryChangeColorSelectedNote(Vector3 targetPosition) {
+            LookBackObject foundNote = s_instance.GetNoteAtMeasure(CurrentSelectedMeasure, targetPosition);
+            if(foundNote.note == null || foundNote.isSegment) {
+                // is not note object is found or was a segment we do nothing;
+                return;
+            }
+
+            Note theFoundNote = foundNote.note;
+            if(theFoundNote == null){
+                return;
+            }
+
+            // Mirror routine
+            int totalNotes = 0;
+            Dictionary<float, List<Note>> workingTrack = s_instance.GetCurrentTrackDifficulty();
+            if(workingTrack.ContainsKey(CurrentSelectedMeasure)) {
+                List<Note> notes = workingTrack[CurrentSelectedMeasure];
+                totalNotes = notes.Count;
+
+                if(totalNotes >= MAX_ALLOWED_NOTES) {
+                    //Track.LogMessage("Max number of notes reached");
+                    Miku_DialogManager.ShowDialog(Miku_DialogManager.DialogType.Alert, StringVault.Alert_MaxNumberOfNotes);
+                    return;
+                }
+
+                Note.NoteType targetType = Note.NoteType.LeftHanded;
+                if(theFoundNote.Type == Note.NoteType.LeftHanded) {
+                    targetType = Note.NoteType.RightHanded;
+                } else if(theFoundNote.Type == Note.NoteType.RightHanded) {
+                    targetType = Note.NoteType.OneHandSpecial;
+                } else if(theFoundNote.Type == Note.NoteType.OneHandSpecial) {
+                    targetType = Note.NoteType.BothHandsSpecial;
+                } else if(theFoundNote.Type == Note.NoteType.BothHandsSpecial) {
+                    targetType = Note.NoteType.LeftHanded;
+                }
+
+                Vector3 targetPost = new Vector3(
+                    theFoundNote.Position[0],
+                    theFoundNote.Position[1],
+                    theFoundNote.Position[2]
+                );
+
+                GameObject targetToDelete = GameObject.Find(theFoundNote.Id);
+                // print(targetToDelete);
+                if(targetToDelete) {
+                    DestroyImmediate(targetToDelete);
+                }
+                notes.Clear();
+                
+
+                Note n = new Note(targetPost, FormatNoteName(CurrentSelectedMeasure, s_instance.TotalNotes, targetType));
+                n.Type = targetType;
+                if(theFoundNote.Segments != null && theFoundNote.Segments.GetLength(0) > 0) {
+                    n.Segments = new float[theFoundNote.Segments.GetLength(0), 3]; 
+                    for(int i = 0; i < theFoundNote.Segments.GetLength(0); ++i) {
+                        n.Segments[i, 0] = theFoundNote.Segments[i, 0];
+                        n.Segments[i, 1] = theFoundNote.Segments[i, 1];
+                        n.Segments[i, 2] = theFoundNote.Segments[i, 2];
+                    }
+                }
+                s_instance.AddNoteGameObjectToScene(n);
+                notes.Add(n); 
+                
+                if(s_instance.m_FullStatsContainer.activeInHierarchy) {
+                    s_instance.GetCurrentStats();
+                }                
+
+                if(n.Segments != null && n.Segments.GetLength(0) > 0) { 
                     s_instance.UpdateSegmentsList();
                 }
             }            

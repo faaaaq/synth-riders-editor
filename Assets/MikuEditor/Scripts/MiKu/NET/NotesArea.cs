@@ -51,6 +51,7 @@ namespace MiKu.NET {
         public LayerMask targetMask = 11;
         private bool isCTRLDown;
         private bool isALTDown;
+        private bool isSHIFDown;
 
         Vector3 finalPosition, mirroredPosition;
         GameObject[] multipleNotes;
@@ -126,6 +127,7 @@ namespace MiKu.NET {
             if(hasFocus) {
                 isCTRLDown = false;
                 isALTDown = false;
+                isSHIFDown = false;
             } 
         }
 
@@ -150,9 +152,18 @@ namespace MiKu.NET {
             if(Input.GetButtonUp("Input Modifier2")) {
                 isALTDown = false;
             }
+
+            if(Input.GetButtonDown("Input Modifier3")) {
+                isSHIFDown = true;				
+            }
+
+            // Input.GetKeyUp(KeyCode.LeftAlt)
+            if(Input.GetButtonUp("Input Modifier3")) {
+                isSHIFDown = false;
+            }
             
             if (Input.GetMouseButtonDown(0) && selectedNote != null) {
-                if(!isALTDown && !isCTRLDown) {
+                if(!isALTDown && !isCTRLDown && !isSHIFDown) {
                     if(Track.IsOnMirrorMode) {
                         System.Array.Clear(multipleNotes, 0, 2);
                         multipleNotes[0] = selectedNote;
@@ -162,8 +173,10 @@ namespace MiKu.NET {
                         Track.AddNoteToChart(selectedNote);
                     }	
                 } else {
-                    if(isCTRLDown) {
+                    if(isCTRLDown && !isALTDown && !isSHIFDown) {
                         Track.TryMirrorSelectedNote(selectedNote.transform.position);
+                    } else if(isSHIFDown && !isALTDown && !isCTRLDown) { 
+                        Track.TryChangeColorSelectedNote(selectedNote.transform.position);
                     }
                 }               			
             }
