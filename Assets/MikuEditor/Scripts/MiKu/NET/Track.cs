@@ -1646,6 +1646,10 @@ namespace MiKu.NET {
                     ShowLastNoteShadow();
                 }
             }
+
+            if(Input.GetKeyDown(KeyCode.N)) {
+                TryAdddNoteToGridCenter();
+            }
 #endregion
 
             if(markerWasUpdated) {
@@ -4305,7 +4309,7 @@ namespace MiKu.NET {
                     CurrentTime = GetCloseStepMeasure(_currentPlayTime, false);
                 }
 
-                CurrentSelectedMeasure = GetBeatMeasureByTime(CurrentTime);
+                CurrentSelectedMeasure = Mathf.RoundToInt(GetBeatMeasureByTime(CurrentTime));
             }
 
             _currentPlayTime = 0;
@@ -5684,7 +5688,61 @@ namespace MiKu.NET {
             );
         }		
 
-#region Statics Methods
+        /// <summary>
+        /// Add a note to the center of the grid, can be use wile the song is playing
+        /// </summary>
+        public void TryAdddNoteToGridCenter() {
+            if(PromtWindowOpen || isOnLongNoteMode) { return; }          
+
+            
+            Dictionary<float, List<Note>> workingTrack = s_instance.GetCurrentTrackDifficulty();
+            float targetMeasure = CurrentSelectedMeasure;
+            if(isPlaying) {
+                float _CK = ( K*MBPM );
+                float tempTime;
+                if( (_currentPlayTime%_CK) / _CK >= 0.5f ) {
+                    tempTime = GetCloseStepMeasure(_currentPlayTime);                    
+                } else {
+                    tempTime = GetCloseStepMeasure(_currentPlayTime, false);
+                }
+
+                targetMeasure = Mathf.RoundToInt(GetBeatMeasureByTime(tempTime));            
+            } 
+            
+            if(GetTimeByMeasure(targetMeasure) < MIN_NOTE_START * MS) {
+                Miku_DialogManager.ShowDialog(
+                    Miku_DialogManager.DialogType.Alert, 
+                    string.Format(
+                        StringVault.Info_NoteTooClose,
+                        MIN_NOTE_START
+                    )
+                );
+
+                return;
+            }
+
+            // if there are a note in the current beat, we do nothing
+            if(workingTrack.ContainsKey(targetMeasure)) {
+                return;
+            }  
+
+            Note n = new Note(gridManager.GetNearestPointOnGrid(new Vector3(0, 0, MStoUnit(GetTimeByMeasure(targetMeasure)))), FormatNoteName(targetMeasure, 1, Note.NoteType.LeftHanded));
+            n.Type = Note.NoteType.LeftHanded;
+            AddNoteGameObjectToScene(n);
+
+            List<Note> notes = new List<Note>();
+            notes.Add(n);
+            workingTrack.Add(targetMeasure, notes); 
+            AddTimeToSFXList(GetTimeByMeasure(targetMeasure));
+
+            s_instance.UpdateTotalNotes();
+            if(s_instance.m_FullStatsContainer.activeInHierarchy) {
+                s_instance.GetCurrentStats();
+            }
+                    
+        }
+
+#region Statics Methods       
         
         /// <summary>
         /// Mirror the note found at the passed position
