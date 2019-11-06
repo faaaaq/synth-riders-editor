@@ -3,56 +3,73 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace MiKu.NET {
-	public class NotesArea : MonoBehaviour {
+    public class NotesArea : MonoBehaviour {
 
-		public static NotesArea s_instance;
+        public static NotesArea s_instance;
 
-		[SerializeField]
-		private GridManager grid;
+        [SerializeField]
+        private GridManager grid;
 
-		[Space(20)]
-		[SerializeField]
-		private GameObject m_boundBox;
-		private Transform boundBoxTransform;
+        [Space(20)]
+        [SerializeField]
+        private GameObject m_boundBox;
+        private Transform boundBoxTransform;
+        [SerializeField]
+        private GameObject[] m_historyCircle;
+        private Transform[] historyCircleTransform;
 
-		[Space(20)]
-		[Header("Confort Boundaries")]
-		[SerializeField]
-		private float m_confortableBoundarie = 0.35f;
+        [Space(20)]
+        [Header("Confort Boundaries")]
+        [SerializeField]
+        private float m_confortableBoundarie = 0.35f;
 
-		[SerializeField]
-		private float m_moderateBoundarie = 0.36f;
+        [SerializeField]
+        private float m_moderateBoundarie = 0.36f;
 
-		/* [SerializeField]
-		private float m_intense = 0.76f; */
+        /* [SerializeField]
+        private float m_intense = 0.76f; */
 
-		[Space(20)]
-		[Header("Colors")]
-		[SerializeField]
-		private Color m_confortableColor = Color.blue;
-		[SerializeField]
-		private Color m_moderateColor = Color.yellow;
-		[SerializeField]
-		private Color m_intenseColor = Color.red;		
+        [Space(20)]
+        [Header("Confortable Colors")]
+        [SerializeField]
+        private Color m_confortableColor = Color.blue;
+        [SerializeField]
+        private Color m_moderateColor = Color.yellow;
+        [SerializeField]
+        private Color m_intenseColor = Color.red;
 
-		private GameObject selectedNote;
-		private GameObject mirroredNote;
+        [Space(20)]
+        [Header("Note Colors")]
+        [SerializeField]
+        private Color m_leftHandColor = Color.blue;
+        [SerializeField]
+        private Color m_rightHandColor = Color.yellow;
+        [SerializeField]
+        private Color m_OneHandColor = Color.red;
+        [SerializeField]
+        private Color m_BothHandColor = Color.red;	
 
-		private bool snapToGrip = true;
+        private GameObject selectedNote;
+        private GameObject mirroredNote;
 
-		RaycastHit hit;
-		Ray ray;
-		Vector3 rayPos = Vector3.zero;
+        private bool snapToGrip = true;
 
-		/* bool rayEnabled = false; */
+        RaycastHit hit;
+        Ray ray;
+        Vector3 rayPos = Vector3.zero;
 
-		SpriteRenderer boundBoxSpriteRenderer;
+        /* bool rayEnabled = false; */
 
-		public LayerMask targetMask = 11;
+        SpriteRenderer boundBoxSpriteRenderer;
+        SpriteRenderer[] historyCircleSpriteRenderer;
+
+        public LayerMask targetMask = 11;
         private bool isCTRLDown;
+        private bool isALTDown;
+        private bool isSHIFDown;
 
-		Vector3 finalPosition, mirroredPosition;
-		GameObject[] multipleNotes;
+        Vector3 finalPosition, mirroredPosition;
+        GameObject[] multipleNotes;
 
         public bool SnapToGrip
         {
@@ -68,166 +85,227 @@ namespace MiKu.NET {
         }
 
         void Awake() {
-			s_instance = this;
+            s_instance = this;
 
-			multipleNotes = new GameObject[2];
-		}
+            multipleNotes = new GameObject[2];
+        }
 
-		void Start() {
-			boundBoxTransform = m_boundBox.transform;
-			boundBoxSpriteRenderer = m_boundBox.GetComponent<SpriteRenderer>();
-			m_boundBox.SetActive(false);
-		}		
+        void Start() {
+            boundBoxTransform = m_boundBox.transform;
+            boundBoxSpriteRenderer = m_boundBox.GetComponent<SpriteRenderer>();
+            m_boundBox.SetActive(false);
 
-		void OnDisable() {
-			if(selectedNote != null) {
-				GameObject.DestroyImmediate(selectedNote);
-			}
+            historyCircleTransform = new Transform[m_historyCircle.Length];
+            historyCircleSpriteRenderer = new SpriteRenderer[m_historyCircle.Length];
+            for(int i = 0; i < m_historyCircle.Length; ++i) {
+                historyCircleTransform[i] = m_historyCircle[i].transform;
+                historyCircleSpriteRenderer[i] = m_historyCircle[i].GetComponent<SpriteRenderer>();
+            }
+        }		
 
-			if(mirroredNote != null) {
-				GameObject.DestroyImmediate(mirroredNote);
-			}
+        void OnDisable() {
+            if(selectedNote != null) {
+                GameObject.DestroyImmediate(selectedNote);
+            }
 
-			m_boundBox.SetActive(false);
-		}
+            if(mirroredNote != null) {
+                GameObject.DestroyImmediate(mirroredNote);
+            }
 
-		void EnabledSelectedNote() {
-			if(selectedNote == null) {
-				selectedNote = Track.GetSelectedNoteMarker();
-				SphereCollider coll = selectedNote.GetComponent<SphereCollider>();
-				if(coll == null) {
-					coll = selectedNote.GetComponentInChildren<SphereCollider>();
-				}
+            m_boundBox.SetActive(false);
+        }
 
-				coll.enabled = false;
+        void EnabledSelectedNote() {
+            if(selectedNote == null) {
+                selectedNote = Track.GetSelectedNoteMarker();
+                SphereCollider coll = selectedNote.GetComponent<SphereCollider>();
+                if(coll == null) {
+                    coll = selectedNote.GetComponentInChildren<SphereCollider>();
+                }
 
-				m_boundBox.SetActive(true);	
+                coll.enabled = false;
 
-				if(Track.IsOnMirrorMode) {
-					mirroredNote = Track.GetMirroredNoteMarker();
-				}
-			}					
-		}
+                m_boundBox.SetActive(true);	
 
-		void DisableSelectedNote() {
-			if(selectedNote != null) {
-				GameObject.DestroyImmediate(selectedNote);
-				m_boundBox.SetActive(false);
-			}	
+                if(Track.IsOnMirrorMode) {
+                    mirroredNote = Track.GetMirroredNoteMarker();
+                }
+            }					
+        }
 
-			if(mirroredNote != null) {
-				GameObject.DestroyImmediate(mirroredNote);
-			}		
-		}
+        void DisableSelectedNote() {
+            if(selectedNote != null) {
+                GameObject.DestroyImmediate(selectedNote);
+                m_boundBox.SetActive(false);
+            }	
 
-		void OnApplicationFocus(bool hasFocus)
-		{
-			if(hasFocus) {
-				isCTRLDown = false;
-			} 
-		}
+            if(mirroredNote != null) {
+                GameObject.DestroyImmediate(mirroredNote);
+            }		
+        }
 
-		void Update()
-		{
-			if(Input.GetKeyDown(KeyCode.LeftAlt) || Input.GetKeyDown(KeyCode.RightAlt))
-			{
-				isCTRLDown = true;
-			}
+        void OnApplicationFocus(bool hasFocus)
+        {
+            if(hasFocus) {
+                isCTRLDown = false;
+                isALTDown = false;
+                isSHIFDown = false;
+            } 
+        }
 
-			if(Input.GetKeyUp(KeyCode.LeftAlt) || Input.GetKeyUp(KeyCode.RightAlt)) {
-				isCTRLDown = false;
-			}
-			
-			if (!isCTRLDown && Input.GetMouseButtonDown(0) && selectedNote != null) {
-				if(Track.IsOnMirrorMode) {
-                    System.Array.Clear(multipleNotes, 0, 2);
-					multipleNotes[0] = selectedNote;
-					multipleNotes[1] = mirroredNote;
-					Track.AddNoteToChart(multipleNotes);
-				} else {
-					Track.AddNoteToChart(selectedNote);
-				}				
-			}
-		}
+        void Update()
+        {
+            if(Input.GetButtonDown("Input Modifier1"))
+            {
+                isCTRLDown = true;
+            }
 
-		void FixedUpdate() {	
-			ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-			if(Physics.Raycast(ray, out hit, Mathf.Infinity, targetMask.value)) {
-				EnabledSelectedNote();
+            // Input.GetKeyUp(KeyCode.LeftControl) || Input.GetKeyUp(KeyCode.RightControl)
+            if(Input.GetButtonUp("Input Modifier1")) {
+                isCTRLDown = false;
+            }
 
-				rayPos = hit.point;
-				rayPos.z = (float)Track.CurrentUnityUnit;
+            // Input.GetKeyDown(KeyCode.LeftAlt)
+            if(Input.GetButtonDown("Input Modifier2")) {
+                isALTDown = true;
+            }
 
-				finalPosition = (SnapToGrip) ? grid.GetNearestPointOnGrid(rayPos) : rayPos;
+            // Input.GetKeyUp(KeyCode.LeftAlt)
+            if(Input.GetButtonUp("Input Modifier2")) {
+                isALTDown = false;
+            }
 
-				selectedNote.transform.position = finalPosition;
-				boundBoxTransform.position = finalPosition;
+            if(Input.GetButtonDown("Input Modifier3")) {
+                isSHIFDown = true;				
+            }
 
-				if(Track.IsOnMirrorMode) {
-					mirroredPosition = finalPosition;
+            // Input.GetKeyUp(KeyCode.LeftAlt)
+            if(Input.GetButtonUp("Input Modifier3")) {
+                isSHIFDown = false;
+            }
+            
+            if (Input.GetMouseButtonDown(0) && selectedNote != null) {
+                if(!isALTDown && !isCTRLDown && !isSHIFDown) {
+                    if(Track.IsOnMirrorMode) {
+                        System.Array.Clear(multipleNotes, 0, 2);
+                        multipleNotes[0] = selectedNote;
+                        multipleNotes[1] = mirroredNote;
+                        Track.AddNoteToChart(multipleNotes);
+                    } else {
+                        Track.AddNoteToChart(selectedNote);
+                    }	
+                } else {
+                    if(isCTRLDown && !isALTDown && !isSHIFDown) {
+                        Track.TryMirrorSelectedNote(selectedNote.transform.position);
+                    } else if(isSHIFDown && !isALTDown && !isCTRLDown) { 
+                        Track.TryChangeColorSelectedNote(selectedNote.transform.position);
+                    }
+                }               			
+            }
+        }
 
-					if(Track.XAxisInverse) {
-						mirroredPosition.x *= -1;
-					}
+        void FixedUpdate() {	
+            ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if(Physics.Raycast(ray, out hit, Mathf.Infinity, targetMask.value)) {
+                EnabledSelectedNote();
 
-					if(Track.YAxisInverse) {
-						mirroredPosition.y *= -1;
-					}
-					
-					mirroredNote.transform.position = mirroredPosition;
-				}
+                rayPos = hit.point;
+                rayPos.z = (float)Track.CurrentUnityUnit;
 
-				//float toCenter = Mathf.Abs(Vector3.Distance(transform.position, finalPosition));
-				SetBoundaireBoxColor(DistanceToCenter(finalPosition));					
-			} else {
-				DisableSelectedNote();
-			}
-		}
+                finalPosition = (SnapToGrip) ? grid.GetNearestPointOnGrid(rayPos) : rayPos;
 
-		public void RefreshSelectedObjec() {
-			if(selectedNote != null) {
-				GameObject.DestroyImmediate(selectedNote);
-				selectedNote = Track.GetSelectedNoteMarker();
-				if(Track.IsOnMirrorMode) {
-					GameObject.DestroyImmediate(mirroredNote);
-					mirroredNote = Track.GetMirroredNoteMarker();
-				} else {
-					if(mirroredNote != null) {
-						GameObject.DestroyImmediate(mirroredNote);
-					}
-				}
+                selectedNote.transform.position = finalPosition;
+                boundBoxTransform.position = finalPosition;
 
-				SphereCollider coll = selectedNote.GetComponent<SphereCollider>();
-				if(coll == null) {
-					coll = selectedNote.GetComponentInChildren<SphereCollider>();
-				}
+                if(Track.IsOnMirrorMode) {
+                    mirroredPosition = finalPosition;
 
-				coll.enabled = false;
-			}			
-		}
+                    if(Track.XAxisInverse) {
+                        mirroredPosition.x *= -1;
+                    }
 
-		private void SetBoundaireBoxColor(float distanceToCenter) {
-			boundBoxSpriteRenderer.color = GetColorToDistance(distanceToCenter);
-		}
+                    if(Track.YAxisInverse) {
+                        mirroredPosition.y *= -1;
+                    }
+                    
+                    mirroredNote.transform.position = mirroredPosition;
+                }
+
+                //float toCenter = Mathf.Abs(Vector3.Distance(transform.position, finalPosition));
+                SetBoundaireBoxColor(DistanceToCenter(finalPosition));					
+            } else {
+                DisableSelectedNote();
+            }
+        }
+
+        public void RefreshSelectedObjec() {
+            if(selectedNote != null) {
+                GameObject.DestroyImmediate(selectedNote);
+                selectedNote = Track.GetSelectedNoteMarker();
+                if(Track.IsOnMirrorMode) {
+                    GameObject.DestroyImmediate(mirroredNote);
+                    mirroredNote = Track.GetMirroredNoteMarker();
+                } else {
+                    if(mirroredNote != null) {
+                        GameObject.DestroyImmediate(mirroredNote);
+                    }
+                }
+
+                SphereCollider coll = selectedNote.GetComponent<SphereCollider>();
+                if(coll == null) {
+                    coll = selectedNote.GetComponentInChildren<SphereCollider>();
+                }
+
+                coll.enabled = false;
+            }			
+        }
+
+        private void SetBoundaireBoxColor(float distanceToCenter) {
+            boundBoxSpriteRenderer.color = GetColorToDistance(distanceToCenter);
+        }
+
+        public void HideHistoryCircle() {
+            foreach(GameObject hc in m_historyCircle) {
+                hc.SetActive(false);
+            }
+        }
+
+        public void SetHistoryCircleColor(Vector3[] points, Charting.Note.NoteType[] types) {
+            HideHistoryCircle();
+
+            for(int i = 0; i < points.Length; ++i) {
+                m_historyCircle[i].SetActive(true);
+                historyCircleTransform[i].localPosition = points[i];
+                if(types[i] == Charting.Note.NoteType.LeftHanded) {
+                    historyCircleSpriteRenderer[i].color = m_leftHandColor;
+                } else if(types[i] == Charting.Note.NoteType.RightHanded) {
+                    historyCircleSpriteRenderer[i].color = m_rightHandColor;
+                } else if(types[i] == Charting.Note.NoteType.OneHandSpecial) {
+                    historyCircleSpriteRenderer[i].color = m_OneHandColor;
+                } else if(types[i] == Charting.Note.NoteType.BothHandsSpecial) {
+                    historyCircleSpriteRenderer[i].color = m_BothHandColor;
+                } 
+            }
+        }
 
 #region Static Methods
-		public static float DistanceToCenter(Vector3 targetPoint) {
-			return Mathf.Abs(Vector3.Distance(s_instance.transform.position, targetPoint));
-		}
+        public static float DistanceToCenter(Vector3 targetPoint) {
+            return Mathf.Abs(Vector3.Distance(s_instance.transform.position, targetPoint));
+        }
 
-		public static Color GetColorToDistance(float distanceToCenter) {
-			if(distanceToCenter <= s_instance.m_confortableBoundarie) {
-				return s_instance.m_confortableColor;
-				;
-			}
+        public static Color GetColorToDistance(float distanceToCenter) {
+            if(distanceToCenter <= s_instance.m_confortableBoundarie) {
+                return s_instance.m_confortableColor;
+                ;
+            }
 
-			if(distanceToCenter <= s_instance.m_moderateBoundarie) {
-				return s_instance.m_moderateColor;
-			}
+            if(distanceToCenter <= s_instance.m_moderateBoundarie) {
+                return s_instance.m_moderateColor;
+            }
 
-			return s_instance.m_intenseColor;
-		}
+            return s_instance.m_intenseColor;
+        }
 #endregion
-		
-	}
+        
+    }
 }

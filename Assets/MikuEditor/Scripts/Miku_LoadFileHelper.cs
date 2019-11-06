@@ -210,7 +210,8 @@ public class Miku_LoadFileHelper : MonoBehaviour {
     private void LoadAudioChart(string absoluteUri, bool isJSON = false)
     {
         if(Serializer.Initialized) {
-			bool fileLoadSuccess = Serializer.LoadFronFile(absoluteUri, isJSON, absoluteUri.Contains(".dat"));
+			// bool fileLoadSuccess = Serializer.LoadFronFile(absoluteUri, isJSON, absoluteUri.Contains(".dat"));
+			bool fileLoadSuccess = isJSON ? Serializer.LoadFronFile(absoluteUri, isJSON, absoluteUri.Contains(".dat")) : Serializer.LoadFronFile(absoluteUri);
 			if(fileLoadSuccess) {
 
 				editPanelAnimator.Play("Panel In");
@@ -583,6 +584,7 @@ public class Miku_LoadFileHelper : MonoBehaviour {
 				chart.CustomDifficultySpeed = 1;
 				chart.Tags = new List<string>();
 				chart.Lights = defaultLights;
+				chart.UsingBeatMeasure = true;
 				
 				Serializer.ChartData = chart;
 			}

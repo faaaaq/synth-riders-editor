@@ -571,7 +571,7 @@ InputManager:
     descriptiveName: Toggle The Bookmark Jump
     descriptiveNegativeName: 
     negativeButton: 
-    positiveButton: h
+    positiveButton: b
     altNegativeButton: 
     altPositiveButton: 
     gravity: 1000
