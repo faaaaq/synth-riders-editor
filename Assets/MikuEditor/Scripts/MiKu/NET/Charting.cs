@@ -430,6 +430,11 @@ namespace MiKu.NET.Charting {
         public float Offset { get; set; }
 
         /// <value>
+        /// Flag that indicates if a map has been converted from Beat Saber
+        /// </value>
+        public bool BeatConverted { get; set; }
+
+        /// <value>
 		/// List of beats that made the Chart
 		/// </value>
         public Beats Track { get; set; }
